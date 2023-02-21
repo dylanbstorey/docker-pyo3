@@ -23,7 +23,7 @@ use volume::Pyo3Volumes;
 static SYSTEM_DEFAULT_URI: &str = "unix:///var/run/docker.sock";
 
 #[cfg(not(unix))]
-static SYSTEM_DEFAULT_URI: &str = "tcp://127.0.0.1:8080";
+static SYSTEM_DEFAULT_URI: &str = "tcp://localhost:2375";
 
 #[pyclass(name = "Docker")]
 #[derive(Clone, Debug)]

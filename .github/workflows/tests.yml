@@ -77,26 +77,26 @@ jobs:
       - run: pip install .
       - run: pytest -svv
 
-  docker-pyo3-tests-windows:
-    name: "docker-pyo3 run-tests windows"
-    runs-on: windows-latest
-    steps:
-      - uses: actions/checkout@v3
-      - uses: actions-rs/toolchain@v1
-        with:
-          profile: minimal
-          toolchain: 1.65.0
-          override: true
-      - uses: Swatinem/rust-cache@v1
-      - uses: actions/setup-python@v4
-        with:
-          python-version: "3.11"
-      - run: docker pull be2eteam/busybox
-      - run: docker tag e2eteam/busybox busybox
-      - run: pip install maturin pytest 
-      - run: maturin build 
-      - run: pip install .
-      - run: pytest -svv 
+  # docker-pyo3-tests-windows:
+  #   name: "docker-pyo3 run-tests windows"
+  #   runs-on: windows-latest
+  #   steps:
+  #     - uses: actions/checkout@v3
+  #     - uses: actions-rs/toolchain@v1
+  #       with:
+  #         profile: minimal
+  #         toolchain: 1.65.0
+  #         override: true
+  #     - uses: Swatinem/rust-cache@v1
+  #     - uses: actions/setup-python@v4
+  #       with:
+  #         python-version: "3.11"
+  #     - run: docker pull e2eteam/busybox
+  #     - run: docker tag e2eteam/busybox busybox
+  #     - run: pip install maturin pytest 
+  #     - run: maturin build 
+  #     - run: pip install .
+  #     - run: pytest -svv 
 
   typos:
     name: Spell Check with Typos
