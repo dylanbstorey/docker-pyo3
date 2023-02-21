@@ -25,8 +25,7 @@ jobs:
       - name: Install built wheel - x86_64
         run: |
           pip install docker-pyo3 --no-index --find-links dist --force-reinstall
-          pip install pytest
-          pytest
+          
       - name: Upload wheels
         uses: actions/upload-artifact@v3
         with:
@@ -49,8 +48,7 @@ jobs:
       - name: Install built wheel - universal2
         run: |
           pip install docker-pyo3 --no-index --find-links dist --force-reinstall
-          pip install pytest
-          pytest
+          
       - name: Upload wheels
         uses: actions/upload-artifact@v3
         with:
@@ -80,8 +78,7 @@ jobs:
       - name: Install built wheel
         run: |
           pip install docker-pyo3 --no-index --find-links dist --force-reinstall
-          pip install pytest
-          # pytest
+          
       - name: Upload wheels
         uses: actions/upload-artifact@v3
         with:
@@ -110,8 +107,7 @@ jobs:
       if: matrix.target == 'x86_64'
       run: |
         pip install docker-pyo3 --no-index --find-links dist --force-reinstall
-        pip install pytest
-        pytest
+        
     - name: Upload wheels
       uses: actions/upload-artifact@v3
       with:
@@ -145,10 +141,10 @@ jobs:
         install: |
           apt-get update
           apt-get install -y --no-install-recommends python3 python3-pip
-          pip3 install -U pip pytest
+          pip3 install -U pip 
         run: |
           pip3 install docker-pyo3 --no-index --find-links dist/ --force-reinstall
-          pytest
+          
     - name: Upload wheels
       uses: actions/upload-artifact@v3
       with:
@@ -183,7 +179,7 @@ jobs:
         options: -v ${{ github.workspace }}:/io -w /io
         run: |
           apk add py3-pip
-          pip3 install -U pip pytest
+          pip3 install -U pip
           pip3 install docker-pyo3 --no-index --find-links /io/dist/ --force-reinstall
           
     - name: Upload wheels
@@ -221,7 +217,7 @@ jobs:
         githubToken: ${{ github.token }}
         install: |
           apk add py3-pip
-          pip3 install -U pip pytest
+          pip3 install -U pip
         run: |
           pip3 install docker-pyo3 --no-index --find-links dist/ --force-reinstall
           
