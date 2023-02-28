@@ -1,6 +1,6 @@
 [package]
 name = "docker-pyo3"
-version = "0.1.0"
+version = "0.1.2"
 edition = "2021"
 description = "Python bindings to the docker-api-rs crate"
 license = "GPL-3.0-only"

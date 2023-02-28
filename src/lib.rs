@@ -1,9 +1,9 @@
 #[macro_use]
 mod macros;
-mod container;
-mod image;
-mod network;
-mod volume;
+pub mod container;
+pub mod image;
+pub mod network;
+pub mod volume;
 
 use pyo3::prelude::*;
 use pyo3::types::PyDict;
@@ -100,7 +100,7 @@ async fn __data_usage(docker: Pyo3Docker) -> SystemDataUsage200Response {
 
 /// A Python module implemented in Rust.
 #[pymodule]
-fn docker_pyo3(_py: Python, m: &PyModule) -> PyResult<()> {
+pub fn docker_pyo3(_py: Python, m: &PyModule) -> PyResult<()> {
     m.add_class::<Pyo3Docker>()?;
 
     m.add_wrapped(wrap_pymodule!(image::image))?;
@@ -117,3 +117,5 @@ fn docker_pyo3(_py: Python, m: &PyModule) -> PyResult<()> {
 
     Ok(())
 }
+
+
