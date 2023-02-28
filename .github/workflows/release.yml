@@ -1,4 +1,4 @@
-name: "Angreal Release"
+name: "Build + Release"
 
 on:
   release:
