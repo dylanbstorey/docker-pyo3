@@ -261,12 +261,13 @@ dependencies = [
 
 [[package]]
 name = "docker-pyo3"
-version = "0.1.2"
+version = "0.1.3"
 dependencies = [
  "chrono",
  "docker-api",
  "futures-util",
  "pyo3",
+ "pyo3-build-config",
  "pythonize",
  "serde",
  "tar",
