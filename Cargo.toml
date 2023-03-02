@@ -14,7 +14,7 @@ name = "docker_pyo3"
 crate-type = ["cdylib","rlib"]
 
 [dependencies]
-pyo3 = { version = "^0.18", features = ["chrono","extension-module"]} 
+pyo3 = { version = "^0.18", features = ["chrono","extension-module"], extension-module = ["pyo3/extension-module"] }
 chrono = { version = "0.4"}
 docker-api = { version = "0.12.2", features = ["swarm"]}
 tokio = { version="1", features=["macros", "rt-multi-thread"] }
