@@ -19,8 +19,8 @@ def test_images_pull(docker):
     assert isinstance(x,list)
 
 def test_images_pull_bad(docker):
-    """pulling a bad image fails with SystemError"""
-    with pytest.raises(SystemError):
+    """pulling a bad image fails with RuntimeError"""
+    with pytest.raises(RuntimeError):
         docker.images().pull(image="asldfkjasd;lfk")
 
 def test_images_list(docker, image_pull):
@@ -71,7 +71,7 @@ def test_images_get_bad(docker):
     """non existent image interface fails"""
     
     image = docker.images().get("DSDFLKJ")
-    with pytest.raises(SystemError):
+    with pytest.raises(ValueError):
         image.inspect()
         
 

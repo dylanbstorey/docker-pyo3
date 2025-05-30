@@ -6,10 +6,12 @@ use docker_api::{
 };
 use pyo3::prelude::*;
 
-use crate::Pyo3Docker;
+use crate::{get_runtime, Pyo3Docker};
+use crate::error::DockerPyo3Error;
 use pyo3::exceptions;
 use pyo3::types::PyDict;
 use pythonize::pythonize;
+use std::collections::HashMap;
 
 #[pymodule]
 pub fn volume(_py: Python<'_>, m: &PyModule) -> PyResult<()> {
@@ -42,7 +44,7 @@ impl Pyo3Volumes {
 
         match rv {
             Ok(rv) => Ok(pythonize_this!(rv)),
-            Err(rv) => Err(py_sys_exception!(rv)),
+            Err(rv) => Err(DockerPyo3Error::from(rv).into()),
         }
     }
 
@@ -51,54 +53,71 @@ impl Pyo3Volumes {
 
         match rv {
             Ok(rv) => Ok(pythonize_this!(rv)),
-            Err(rv) => Err(py_sys_exception!(rv)),
+            Err(rv) => Err(DockerPyo3Error::from(rv).into()),
         }
     }
 
     pub fn create(
         &self,
+        py: Python,
         name: Option<&str>,
         driver: Option<&str>,
-        _driver_opts: Option<&PyDict>,
-        _labels: Option<&PyDict>,
+        driver_opts: Option<&PyDict>,
+        labels: Option<&PyDict>,
     ) -> PyResult<Py<PyAny>> {
         let mut opts = VolumeCreateOpts::builder();
+        
+        let driver_opts: Option<HashMap<&str, &str>> = if driver_opts.is_some() {
+            Some(driver_opts.unwrap().extract().unwrap())
+        } else {
+            None
+        };
+
+        let labels: Option<HashMap<&str, &str>> = if labels.is_some() {
+            Some(labels.unwrap().extract().unwrap())
+        } else {
+            None
+        };
+
         bo_setter!(name, opts);
         bo_setter!(driver, opts);
-        // bo_setter!(driver_opts, opts);
-        // bo_setter!(labels, opts);
+        bo_setter!(driver_opts, opts);
+        bo_setter!(labels, opts);
 
         let rv = __volumes_create(&self.0, &opts.build());
 
         match rv {
-            Ok(rv) => Ok(pythonize_this!(rv)),
-            Err(rv) => Err(py_sys_exception!(rv)),
+            Ok(volume_response) => {
+                // Extract the volume name from the response and return a Pyo3Volume object
+                let name = &volume_response.name;
+                let volume_obj = Pyo3Volume(self.0.get(name));
+                let py_obj = Py::new(py, volume_obj)?;
+                Ok(py_obj.into_py(py))
+            },
+            Err(rv) => Err(DockerPyo3Error::from(rv).into()),
         }
     }
 }
 
-#[tokio::main]
-async fn __volumes_prune(
+fn __volumes_prune(
     volumes: &Volumes,
     opts: &VolumePruneOpts,
 ) -> Result<VolumePrune200Response, docker_api::Error> {
-    volumes.prune(opts).await
+    get_runtime().block_on(volumes.prune(opts))
 }
 
-#[tokio::main]
-async fn __volumes_list(
+fn __volumes_list(
     volumes: &Volumes,
     opts: &VolumeListOpts,
 ) -> Result<VolumeList200Response, docker_api::Error> {
-    volumes.list(opts).await
+    get_runtime().block_on(volumes.list(opts))
 }
 
-#[tokio::main]
-async fn __volumes_create(
+fn __volumes_create(
     volumes: &Volumes,
     opts: &VolumeCreateOpts,
 ) -> Result<docker_api::models::Volume, docker_api::Error> {
-    volumes.create(opts).await
+    get_runtime().block_on(volumes.create(opts))
 }
 
 #[pymethods]
@@ -117,7 +136,7 @@ impl Pyo3Volume {
 
         match rv {
             Ok(rv) => Ok(pythonize_this!(rv)),
-            Err(rv) => Err(py_sys_exception!(rv)),
+            Err(rv) => Err(DockerPyo3Error::from(rv).into()),
         }
     }
 
@@ -126,19 +145,17 @@ impl Pyo3Volume {
 
         match rv {
             Ok(rv) => Ok(rv),
-            Err(rv) => Err(py_sys_exception!(rv)),
+            Err(rv) => Err(DockerPyo3Error::from(rv).into()),
         }
     }
 }
 
-#[tokio::main]
-async fn __volume_inspect(
+fn __volume_inspect(
     volume: &Volume,
 ) -> Result<docker_api::models::Volume, docker_api::Error> {
-    volume.inspect().await
+    get_runtime().block_on(volume.inspect())
 }
 
-#[tokio::main]
-async fn __volume_delete(volume: &Volume) -> Result<(), docker_api::Error> {
-    volume.delete().await
+fn __volume_delete(volume: &Volume) -> Result<(), docker_api::Error> {
+    get_runtime().block_on(volume.delete())
 }

@@ -10,9 +10,12 @@ def test_networks(docker):
 
 def test_networks_create(docker):
     """we can create a network"""
+    import uuid
+    network_name = f"test_network_{uuid.uuid4().hex[:8]}"
+    
     try:
-        docker.networks().create(name="test_network")
-        n = docker.networks().get("test_network")
+        docker.networks().create(name=network_name)
+        n = docker.networks().get(network_name)
         assert isinstance(n,Network)
     except Exception as e:
         raise e
@@ -22,8 +25,11 @@ def test_networks_create(docker):
 
 def test_networks_list(docker):
     """we can list network"""
+    import uuid
+    network_name = f"test_network_{uuid.uuid4().hex[:8]}"
+    
     try:
-        n = docker.networks().create(name="test_network")
+        n = docker.networks().create(name=network_name)
         ns = docker.networks().list()
         assert isinstance(ns, list)
         assert len(ns) > 0

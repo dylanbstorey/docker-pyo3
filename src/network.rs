@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 
-use crate::Pyo3Docker;
+use crate::{get_runtime, Pyo3Docker};
+use crate::error::DockerPyo3Error;
 use docker_api::opts::{ContainerConnectionOpts, NetworkPruneOpts};
 use docker_api::opts::{ContainerDisconnectionOpts, NetworkCreateOpts};
 use docker_api::{models::NetworkPrune200Response, Network, Networks};
@@ -40,7 +41,7 @@ impl Pyo3Networks {
 
         match rv {
             Ok(rv) => Ok(pythonize_this!(rv)),
-            Err(rv) => Err(py_sys_exception!(rv)),
+            Err(rv) => Err(DockerPyo3Error::from(rv).into()),
         }
     }
 
@@ -49,7 +50,7 @@ impl Pyo3Networks {
 
         match rv {
             Ok(rv) => Ok(pythonize_this!(rv)),
-            Err(rv) => Err(py_sys_exception!(rv)),
+            Err(rv) => Err(DockerPyo3Error::from(rv).into()),
         }
     }
 
@@ -73,7 +74,7 @@ impl Pyo3Networks {
             None
         };
 
-        let labels: Option<HashMap<&str, &str>> = if options.is_some() {
+        let labels: Option<HashMap<&str, &str>> = if labels.is_some() {
             Some(labels.unwrap().extract().unwrap())
         } else {
             None
@@ -91,32 +92,29 @@ impl Pyo3Networks {
         let rv = __networks_create(&self.0, &network_opts.build());
         match rv {
             Ok(rv) => Ok(Pyo3Network(rv)),
-            Err(rv) => Err(py_sys_exception!(rv)),
+            Err(rv) => Err(DockerPyo3Error::from(rv).into()),
         }
     }
 }
 
-#[tokio::main]
-async fn __networks_list(
+fn __networks_list(
     networks: &Networks,
 ) -> Result<Vec<docker_api::models::Network>, docker_api::Error> {
-    networks.list(&Default::default()).await
+    get_runtime().block_on(networks.list(&Default::default()))
 }
 
-#[tokio::main]
-async fn __networks_prune(
+fn __networks_prune(
     networks: &Networks,
     opts: &NetworkPruneOpts,
 ) -> Result<NetworkPrune200Response, docker_api::Error> {
-    networks.prune(opts).await
+    get_runtime().block_on(networks.prune(opts))
 }
 
-#[tokio::main]
-async fn __networks_create(
+fn __networks_create(
     networks: &Networks,
     opts: &NetworkCreateOpts,
 ) -> Result<Network, docker_api::Error> {
-    networks.create(opts).await
+    get_runtime().block_on(networks.create(opts))
 }
 
 #[pymethods]
@@ -135,7 +133,7 @@ impl Pyo3Network {
 
         match rv {
             Ok(rv) => Ok(pythonize_this!(rv)),
-            Err(rv) => Err(py_sys_exception!(rv)),
+            Err(rv) => Err(DockerPyo3Error::from(rv).into()),
         }
     }
 
@@ -143,14 +141,14 @@ impl Pyo3Network {
         let rv = __network_delete(&self.0);
         match rv {
             Ok(rv) => Ok(rv),
-            Err(rv) => Err(py_sys_exception!(rv)),
+            Err(rv) => Err(DockerPyo3Error::from(rv).into()),
         }
     }
 
     pub fn connect(
         &self,
         container_id: &str,
-        _ipam_config: Option<&str>,
+        _ipam_config: Option<&str>, // TODO: Implement IPAM configuration
         aliases: Option<&PyList>,
         links: Option<&PyList>,
         network_id: Option<&str>,
@@ -204,7 +202,7 @@ impl Pyo3Network {
 
         match rv {
             Ok(rv) => Ok(rv),
-            Err(rv) => Err(py_sys_exception!(rv)),
+            Err(rv) => Err(DockerPyo3Error::from(rv).into()),
         }
     }
 
@@ -216,35 +214,31 @@ impl Pyo3Network {
 
         match rv {
             Ok(rv) => Ok(rv),
-            Err(rv) => Err(py_sys_exception!(rv)),
+            Err(rv) => Err(DockerPyo3Error::from(rv).into()),
         }
     }
 }
 
-#[tokio::main]
-async fn __network_inspect(
+fn __network_inspect(
     network: &Network,
 ) -> Result<docker_api::models::Network, docker_api::Error> {
-    network.inspect().await
+    get_runtime().block_on(network.inspect())
 }
 
-#[tokio::main]
-async fn __network_delete(network: &Network) -> Result<(), docker_api::Error> {
-    network.delete().await
+fn __network_delete(network: &Network) -> Result<(), docker_api::Error> {
+    get_runtime().block_on(network.delete())
 }
 
-#[tokio::main]
-async fn __network_connect(
+fn __network_connect(
     network: &Network,
     opts: &ContainerConnectionOpts,
 ) -> Result<(), docker_api::Error> {
-    network.connect(opts).await
+    get_runtime().block_on(network.connect(opts))
 }
 
-#[tokio::main]
-async fn __network_disconnect(
+fn __network_disconnect(
     network: &Network,
     opts: &ContainerDisconnectionOpts,
 ) -> Result<(), docker_api::Error> {
-    network.disconnect(opts).await
+    get_runtime().block_on(network.disconnect(opts))
 }

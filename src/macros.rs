@@ -17,3 +17,12 @@ macro_rules! py_sys_exception {
         exceptions::PySystemError::new_err(format!("{}", $o))
     };
 }
+
+macro_rules! docker_result {
+    ($result:expr) => {
+        match $result {
+            Ok(value) => Ok(value),
+            Err(e) => Err(crate::error::DockerPyo3Error::from(e).into()),
+        }
+    };
+}
