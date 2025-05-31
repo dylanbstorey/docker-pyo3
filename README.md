@@ -1,29 +1,96 @@
 # docker-pyo3
 
-Python bindings the the rust `docker_api` crate.
+Python bindings for the Rust `docker_api` crate, providing high-performance Docker operations without subprocess overhead.
 
+## Features
 
-## Basic Usage
-`pip install docker_pyo3`
+- **Container Management**: Complete lifecycle management with advanced parameters
+- **Stack Orchestration**: Multi-container application deployment with service scaling
+- **Image Operations**: Pull, build, push, and manage Docker images with registry authentication
+- **Network Management**: Create and manage Docker networks with isolation and connectivity
+- **Volume Management**: Persistent data storage and sharing between containers
+- **Health Monitoring**: Real-time container health status and resource monitoring
+- **No Subprocess Overhead**: Direct Docker API communication through Rust bindings
+
+## Quick Start
 
 ```python
-
 from docker_pyo3 import Docker
 
-# Connecto the daemon
+# Initialize Docker client
 docker = Docker()
 
-# pull an image
-docker.images().pull(image='busybox')
+# Container operations
+container = docker.containers().create(
+    image="nginx:latest",
+    name="my-nginx",
+    ports={"80": "8080"},
+    env=["ENV=production"]
+)
+container.start()
 
-# build an image
-docker.images().build(path="path/to/dockerfile",dockerfile='Dockerfile',tag='test-image')
+# Stack orchestration
+stack = docker.create_stack("myapp")
+web_service = docker.create_service("web")
+web_service.image("nginx:latest")
+web_service.ports(["80:8080"])
+stack.register_service(web_service)
+stack.up()
 
-# run a container
-c = docker.containers().create(image='busybox',name='weee')
+# Service scaling
+stack.scale("web", 3)
+status = stack.status()  # Get detailed health information
+
+# Image management
+image = docker.images().pull("python:3.11")
+docker.images().build(path=".", tag="myapp:latest")
 ```
 
-Full api examples can be seen in the `py_test` folder.
+## Re-exporting in Your Own Package
+
+docker-pyo3 can be integrated into other Rust-based Python packages and re-exported under custom namespaces:
+
+```rust
+use pyo3::prelude::*;
+
+#[pymodule]
+fn my_package(py: Python, m: &PyModule) -> PyResult<()> {
+    // Re-export all docker-pyo3 functionality under your namespace
+    docker_pyo3::register_module(py, m, "my_package")?;
+    
+    // Add your own additional functionality
+    Ok(())
+}
+```
+
+Python usage:
+```python
+from my_package import Docker  # Same API, different namespace
+docker = Docker()
+```
+
+See [docs/reexporting.md](docs/reexporting.md) for detailed integration examples.
+
+## Documentation
+
+**📚 [Complete Documentation](docs/README.md)**
+
+- [Container Management](docs/containers.md) - Lifecycle, configuration, monitoring
+- [Stack Orchestration](docs/stacks.md) - Multi-container deployments, scaling
+- [Service Definition](docs/services.md) - Fluent API, templates, reusable components
+- [Image Management](docs/images.md) - Building, pushing, registry operations
+- [Network Management](docs/networks.md) - Networking, isolation, connectivity
+- [Volume Management](docs/volumes.md) - Data persistence, backup, sharing
+
+## Installation
+
+```bash
+pip install docker-pyo3
+```
+
+## Examples
+
+See the [`py_test`](py_test/) folder for comprehensive examples and test cases.
 
 
 ## Python has `docker` already, why does this exist ?

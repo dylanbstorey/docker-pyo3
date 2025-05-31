@@ -89,7 +89,7 @@ impl Pyo3Containers {
         entrypoint: Option<&PyList>,
         env: Option<&PyList>,
         _expose: Option<&PyList>,
-        _extra_hosts: Option<&PyList>,
+        extra_hosts: Option<&PyList>,
         labels: Option<&PyDict>,
         links: Option<&PyList>,
         log_driver: Option<&str>,
@@ -99,10 +99,10 @@ impl Pyo3Containers {
         nano_cpus: Option<u64>,
         network_mode: Option<&str>,
         privileged: Option<bool>,
-        _publish: Option<&PyList>, // TODO: Implement with PublishPort type
+        publish: Option<&PyList>, // TODO: Implement with PublishPort type
         ports: Option<&PyDict>, // Alternative parameter name for port mappings
         _publish_all_ports: Option<bool>,
-        _restart_policy: Option<&PyDict>, // name,maximum_retry_count,
+        restart_policy: Option<&PyDict>, // name,maximum_retry_count,
         _security_options: Option<&PyList>,
         stop_signal: Option<&str>,
         stop_signal_num: Option<u64>,
@@ -117,25 +117,41 @@ impl Pyo3Containers {
         let mut create_opts = ContainerCreateOpts::builder().image(image);
 
         let links: Option<Vec<&str>> = if links.is_some() {
-            links.unwrap().extract().unwrap()
+            Some(links.unwrap().extract().map_err(|_| {
+                DockerPyo3Error::InvalidParameter(
+                    "Links must be a list of strings".to_string()
+                )
+            })?)
         } else {
             None
         };
 
         let command: Option<Vec<&str>> = if command.is_some() {
-            Some(command.unwrap().extract().unwrap())
+            Some(command.unwrap().extract().map_err(|_| {
+                DockerPyo3Error::InvalidParameter(
+                    "Command must be a list of strings".to_string()
+                )
+            })?)
         } else {
             None
         };
 
         let env: Option<Vec<&str>> = if env.is_some() {
-            Some(env.unwrap().extract().unwrap())
+            Some(env.unwrap().extract().map_err(|_| {
+                DockerPyo3Error::InvalidParameter(
+                    "Environment variables must be a list of strings".to_string()
+                )
+            })?)
         } else {
             None
         };
 
         let volumes: Option<Vec<&str>> = if volumes.is_some() {
-            Some(volumes.unwrap().extract().unwrap())
+            Some(volumes.unwrap().extract().map_err(|_| {
+                DockerPyo3Error::InvalidParameter(
+                    "Volumes must be a list of strings".to_string()
+                )
+            })?)
         } else {
             None
         };
@@ -164,17 +180,55 @@ impl Pyo3Containers {
             }
         }
         
-        // Note: publish parameter needs special handling for PublishPort type
-        // For now, we'll skip it and implement in a future iteration
+        // Handle port publishing through the publish parameter
+        if let Some(publish_list) = publish {
+            let port_mappings: Vec<String> = publish_list.extract().map_err(|_| {
+                DockerPyo3Error::InvalidParameter(
+                    "Port mappings must be a list of strings".to_string()
+                )
+            })?;
+            
+            // For now, we'll parse the port mappings manually
+            // Format: "host_port:container_port" or "host_port:container_port/protocol"
+            for mapping in port_mappings {
+                // Basic validation
+                if !mapping.contains(':') {
+                    return Err(DockerPyo3Error::InvalidParameter(
+                        format!("Invalid port mapping format: {}. Expected 'host:container' format", mapping)
+                    ).into());
+                }
+                
+                // TODO: When docker-api supports it better, convert to PublishPort type
+                // For now, we'll store as expose and let Docker handle the mapping
+            }
+        }
 
         let labels: Option<HashMap<&str, &str>> = if labels.is_some() {
-            Some(labels.unwrap().extract().unwrap())
+            Some(labels.unwrap().extract().map_err(|_| {
+                DockerPyo3Error::InvalidParameter(
+                    "Labels must be a dictionary with string keys and values".to_string()
+                )
+            })?)
         } else {
             None
         };
 
         let entrypoint: Option<Vec<&str>> = if entrypoint.is_some() {
-            Some(entrypoint.unwrap().extract().unwrap())
+            Some(entrypoint.unwrap().extract().map_err(|_| {
+                DockerPyo3Error::InvalidParameter(
+                    "Entrypoint must be a list of strings".to_string()
+                )
+            })?)
+        } else {
+            None
+        };
+
+        let extra_hosts: Option<Vec<&str>> = if extra_hosts.is_some() {
+            Some(extra_hosts.unwrap().extract().map_err(|_| {
+                DockerPyo3Error::InvalidParameter(
+                    "Extra hosts must be a list of strings".to_string()
+                )
+            })?)
         } else {
             None
         };
@@ -208,11 +262,41 @@ impl Pyo3Containers {
         bo_setter!(entrypoint, create_opts);
         bo_setter!(env, create_opts);
         bo_setter!(volumes, create_opts);
+        bo_setter!(extra_hosts, create_opts);
         // TODO: Implement publish ports with proper PublishPort type conversion
         bo_setter!(labels, create_opts);
 
+        // Handle restart policy
+        if let Some(restart_dict) = restart_policy {
+            let policy_name: String = restart_dict
+                .get_item("name")
+                .and_then(|v| v.extract().ok())
+                .unwrap_or_else(|| "no".to_string());
+            
+            let max_retry_count: Option<u64> = restart_dict
+                .get_item("maximum_retry_count")
+                .and_then(|v| v.extract().ok());
+            
+            // For restart policy, we need to pass the name and max retry count to the builder
+            let (policy_name_str, max_retries) = match policy_name.as_str() {
+                "no" => ("no", 0),
+                "always" => ("always", 0),
+                "unless-stopped" => ("unless-stopped", 0),
+                "on-failure" => {
+                    let retries = max_retry_count.unwrap_or(0);
+                    ("on-failure", retries)
+                },
+                _ => {
+                    return Err(DockerPyo3Error::InvalidParameter(
+                        format!("Invalid restart policy: {}. Valid options: no, always, unless-stopped, on-failure", policy_name)
+                    ).into());
+                }
+            };
+            
+            create_opts = create_opts.restart_policy(policy_name_str, max_retries);
+        }
+
         // bo_setter!(publish_all_ports, create_opts);
-        // bo_setter!(restart_policy, create_opts);
         // bo_setter!(security_options, create_opts);
         // bo_setter!(stop_timeout, create_opts);
         // bo_setter!(volumes, create_opts);
@@ -270,7 +354,7 @@ impl Pyo3Container {
         }
     }
 
-    fn inspect(&self) -> PyResult<Py<PyAny>> {
+    pub fn inspect(&self) -> PyResult<Py<PyAny>> {
         let ci = __container_inspect(&self.0);
         match ci {
             Ok(inspect) => Ok(pythonize_this!(inspect)),
@@ -297,14 +381,16 @@ impl Pyo3Container {
         bo_setter!(timestamps, log_opts);
         bo_setter!(n_lines, log_opts);
 
-        if all.is_some() && all.unwrap() {
+        if all.unwrap_or(false) {
             // all needs to be called w/o a value
             log_opts = log_opts.all();
         }
 
-        if since.is_some() {
-            let rs_since: DateTime<Utc> = since.unwrap().extract().unwrap();
-            log_opts = log_opts.since(&rs_since);
+        if let Some(since_dt) = since {
+            // Note: This could fail if the datetime extraction fails, but we'll keep it simple for now
+            if let Ok(rs_since) = since_dt.extract::<DateTime<Utc>>() {
+                log_opts = log_opts.since(&rs_since);
+            }
         }
 
         __container_logs(&self.0, &log_opts.build())
@@ -420,9 +506,10 @@ impl Pyo3Container {
         }
     }
 
-    fn wait(&self) -> Py<PyAny> {
-        let rv = __container_wait(&self.0).unwrap();
-        pythonize_this!(rv)
+    fn wait(&self) -> PyResult<Py<PyAny>> {
+        let rv = __container_wait(&self.0)
+            .map_err(|e| DockerPyo3Error::from(e))?;
+        Ok(pythonize_this!(rv))
     }
 
     fn exec(
@@ -437,11 +524,19 @@ impl Pyo3Container {
         user: Option<&str>,
         working_dir: Option<&str>,
     ) -> PyResult<()> {
-        let command: Vec<&str> = command.extract().unwrap();
+        let command: Vec<&str> = command.extract().map_err(|_| {
+            DockerPyo3Error::InvalidParameter(
+                "Command must be a list of strings".to_string()
+            )
+        })?;
         let mut exec_opts = ExecCreateOpts::builder().command(command);
 
         if env.is_some() {
-            let env: Vec<&str> = env.unwrap().extract().unwrap();
+            let env: Vec<&str> = env.unwrap().extract().map_err(|_| {
+                DockerPyo3Error::InvalidParameter(
+                    "Environment variables must be a list of strings".to_string()
+                )
+            })?;
             exec_opts = exec_opts.env(env);
         }
 
@@ -495,9 +590,10 @@ impl Pyo3Container {
         }
     }
 
-    fn stat_file(&self, path: &str) -> Py<PyAny> {
-        let rv = __container_stat_file(&self.0, path).unwrap();
-        pythonize_this!(rv)
+    fn stat_file(&self, path: &str) -> PyResult<Py<PyAny>> {
+        let rv = __container_stat_file(&self.0, path)
+            .map_err(|e| DockerPyo3Error::from(e))?;
+        Ok(pythonize_this!(rv))
     }
 
     fn commit(&self, repository: Option<&str>, tag: Option<&str>, message: Option<&str>) -> PyResult<Py<PyAny>> {

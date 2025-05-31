@@ -157,6 +157,7 @@ impl Service {
     // ADVANCED VOLUME CONFIGURATION
     
     /// Add advanced volume configuration
+    #[pyo3(signature = (source, target, volume_type = None, read_only = false))]
     pub fn volume_advanced(&mut self, source: String, target: String, volume_type: Option<String>, read_only: bool) {
         self.internal = self.internal.clone().volume_advanced(source, target, volume_type, read_only);
     }
@@ -396,13 +397,25 @@ services:
     pub fn up(&mut self) -> PyResult<()> {
         // Create default network
         let network_name = format!("{}_default", self.name);
-        let network = self.docker.networks().create(
+        
+        // Try to create the network, ignore if it already exists
+        let network_id = match self.docker.networks().create(
             &network_name,
             None, None, None, None, None, None, None, None
-        )?;
+        ) {
+            Ok(network) => network.id(),
+            Err(e) => {
+                // If network already exists, that's fine - just use it
+                if e.to_string().contains("already exists") {
+                    network_name.clone()
+                } else {
+                    return Err(e);
+                }
+            }
+        };
         
         // Store network ID
-        self.state.networks.insert("default".to_string(), network.id());
+        self.state.networks.insert("default".to_string(), network_id);
         
         // Deploy services
         for (service_name, service) in &self.registered_services {
@@ -422,10 +435,10 @@ services:
             
             // Use a simple container creation approach
             let container = Python::with_gil(|py| -> PyResult<_> {
-                // Create minimal command list if present
-                let cmd_list = if let Some(cmd_str) = config.get("command") {
-                    let cmd_vec: Vec<&str> = cmd_str.split_whitespace().collect();
-                    let list = pyo3::types::PyList::new(py, &cmd_vec);
+                // Create command list using raw command to preserve structure
+                let cmd_list = if let Some(raw_cmd) = service.get_raw_command() {
+                    let cmd_str_refs: Vec<&str> = raw_cmd.iter().map(|s| s.as_str()).collect();
+                    let list = pyo3::types::PyList::new(py, &cmd_str_refs);
                     Some(list)
                 } else {
                     None
@@ -510,10 +523,18 @@ services:
         self.state.containers.clear();
         
         // Remove networks
+        let network_name = format!("{}_default", self.name);
+        
+        // Try to remove by stored ID first
         for (_, network_id) in self.state.networks.clone() {
             let network = self.docker.networks().get(&network_id);
             let _ = network.delete();
         }
+        
+        // Also try to remove by name in case ID wasn't stored
+        let network = self.docker.networks().get(&network_name);
+        let _ = network.delete();
+        
         self.state.networks.clear();
         
         self.state.status = StackStatus::NotDeployed;
@@ -536,17 +557,98 @@ services:
             };
             status_dict.set_item("status", status_str)?;
             
-            // Service statuses
+            // Service statuses with container health
             let services_dict = PyDict::new(py);
             for service_name in self.registered_services.keys() {
                 let service_dict = PyDict::new(py);
                 
                 if let Some(container_ids) = self.state.containers.get(service_name) {
                     service_dict.set_item("replicas", container_ids.len())?;
-                    service_dict.set_item("running", container_ids.len())?; // Simplified
+                    
+                    // Check health status of each container
+                    let mut running_count = 0;
+                    let mut healthy_count = 0;
+                    let mut unhealthy_count = 0;
+                    let container_statuses = pyo3::types::PyList::empty(py);
+                    
+                    for container_id in container_ids {
+                        let container = self.docker.containers().get(container_id);
+                        
+                        // Try to inspect container - handle errors gracefully
+                        match container.inspect() {
+                            Ok(info) => {
+                                let container_status = PyDict::new(py);
+                                container_status.set_item("id", container_id)?;
+                                
+                                // Extract state information
+                                if let Ok(state_dict) = info.extract::<&PyDict>(py) {
+                                    if let Some(state) = state_dict.get_item("State") {
+                                        if let Ok(state_dict) = state.extract::<&PyDict>() {
+                                            // Check if running
+                                            if let Some(running) = state_dict.get_item("Running") {
+                                                let is_running: bool = running.extract().unwrap_or(false);
+                                                container_status.set_item("running", is_running)?;
+                                                if is_running {
+                                                    running_count += 1;
+                                                }
+                                            }
+                                            
+                                            // Check health status if available
+                                            if let Some(health) = state_dict.get_item("Health") {
+                                                if let Ok(health_dict) = health.extract::<&PyDict>() {
+                                                    if let Some(status) = health_dict.get_item("Status") {
+                                                        let health_status: String = status.extract().unwrap_or_else(|_| "unknown".to_string());
+                                                        container_status.set_item("health", &health_status)?;
+                                                        
+                                                        match health_status.as_str() {
+                                                            "healthy" => healthy_count += 1,
+                                                            "unhealthy" => unhealthy_count += 1,
+                                                            _ => {}
+                                                        }
+                                                    }
+                                                }
+                                            } else {
+                                                container_status.set_item("health", "no_healthcheck")?;
+                                            }
+                                            
+                                            // Extract status and exit code
+                                            if let Some(status) = state_dict.get_item("Status") {
+                                                let status_str: String = status.extract().unwrap_or_else(|_| "unknown".to_string());
+                                                container_status.set_item("status", status_str)?;
+                                            }
+                                            
+                                            if let Some(exit_code) = state_dict.get_item("ExitCode") {
+                                                let exit_code_num: i64 = exit_code.extract().unwrap_or(-1);
+                                                container_status.set_item("exit_code", exit_code_num)?;
+                                            }
+                                        }
+                                    }
+                                }
+                                
+                                container_statuses.append(container_status)?;
+                            }
+                            Err(_) => {
+                                // Container not found or inspection failed
+                                let container_status = PyDict::new(py);
+                                container_status.set_item("id", container_id)?;
+                                container_status.set_item("running", false)?;
+                                container_status.set_item("status", "not_found")?;
+                                container_status.set_item("health", "unknown")?;
+                                container_statuses.append(container_status)?;
+                            }
+                        }
+                    }
+                    
+                    service_dict.set_item("running", running_count)?;
+                    service_dict.set_item("healthy", healthy_count)?;
+                    service_dict.set_item("unhealthy", unhealthy_count)?;
+                    service_dict.set_item("containers", container_statuses)?;
                 } else {
                     service_dict.set_item("replicas", 0)?;
                     service_dict.set_item("running", 0)?;
+                    service_dict.set_item("healthy", 0)?;
+                    service_dict.set_item("unhealthy", 0)?;
+                    service_dict.set_item("containers", pyo3::types::PyList::empty(py))?;
                 }
                 
                 services_dict.set_item(service_name, service_dict)?;
@@ -591,6 +693,98 @@ services:
         Ok(all_logs.join("\n"))
     }
     
+    /// Helper function to create a container for a service
+    fn create_service_container(&mut self, service_name: &str, replica_num: u32) -> PyResult<()> {
+        let service = self.registered_services.get(service_name)
+            .ok_or_else(|| pyo3::exceptions::PyValueError::new_err(
+                format!("Service '{}' not found", service_name)
+            ))?;
+            
+        let config = service.to_config_map();
+        
+        // Get image or return error
+        let image = config.get("image")
+            .ok_or_else(|| pyo3::exceptions::PyValueError::new_err(
+                format!("Service '{}' has no image", service_name)
+            ))?;
+            
+        // Create container name with replica number
+        let container_name = format!("{}_{}_{}",  self.name, service_name, replica_num);
+        
+        // Create container using same logic as up() method
+        let container = Python::with_gil(|py| -> PyResult<_> {
+            // Create command list using raw command to preserve structure
+            let cmd_list = if let Some(raw_cmd) = service.get_raw_command() {
+                let cmd_str_refs: Vec<&str> = raw_cmd.iter().map(|s| s.as_str()).collect();
+                let list = pyo3::types::PyList::new(py, &cmd_str_refs);
+                Some(list)
+            } else {
+                None
+            };
+            
+            // Create minimal environment list
+            let env_list = if let Some(env_str) = config.get("environment") {
+                let env_pairs: Vec<&str> = env_str.split(',').collect();
+                let list = pyo3::types::PyList::new(py, &env_pairs);
+                Some(list)
+            } else {
+                None
+            };
+            
+            // Call the create method with proper arguments
+            self.docker.containers().create(
+                image,          // image
+                None,            // attach_stderr
+                None,            // attach_stdin
+                None,            // attach_stdout
+                None,            // auto_remove
+                None,            // capabilities
+                cmd_list,        // command
+                None,            // cpu_shares
+                None,            // cpus
+                None,            // devices
+                None,            // entrypoint
+                env_list,        // env
+                None,            // expose
+                None,            // extra_hosts
+                None,            // labels
+                None,            // links
+                None,            // log_driver
+                None,            // memory
+                None,            // memory_swap
+                Some(&container_name), // name
+                None,            // nano_cpus
+                None,            // network_mode
+                None,            // privileged
+                None,            // publish
+                None,            // ports
+                None,            // publish_all_ports
+                None,            // restart_policy
+                None,            // security_options
+                None,            // stop_signal
+                None,            // stop_signal_num
+                None,            // stop_timeout
+                None,            // tty
+                None,            // user
+                None,            // userns_mode
+                None,            // volumes
+                None,            // volumes_from
+                config.get("working_dir").map(|s| s.as_str()) // working_dir
+            )
+        })?;
+        
+        // Start the container
+        container.start()?;
+        
+        // Track container by getting its ID
+        let container_id = container.id()?;
+        self.state.containers.entry(service_name.to_string())
+            .or_insert_with(Vec::new)
+            .push(container_id);
+            
+        Ok(())
+    }
+
     /// Scale a service (Phase 2.0)
     pub fn scale(&mut self, service_name: String, replicas: u32) -> PyResult<()> {
         if !self.registered_services.contains_key(&service_name) {
@@ -599,7 +793,36 @@ services:
             ));
         }
         
-        // For now, just return Ok - full implementation would scale containers
+        let current_containers = self.state.containers
+            .get(&service_name)
+            .map(|v| v.len())
+            .unwrap_or(0) as u32;
+            
+        if replicas == current_containers {
+            return Ok(()); // Already at target replica count
+        }
+        
+        if replicas > current_containers {
+            // Scale up - create additional containers
+            let containers_to_add = replicas - current_containers;
+            for i in 0..containers_to_add {
+                let replica_num = current_containers + i + 1;
+                self.create_service_container(&service_name, replica_num)?;
+            }
+        } else {
+            // Scale down - remove excess containers
+            let containers_to_remove = current_containers - replicas;
+            if let Some(container_ids) = self.state.containers.get_mut(&service_name) {
+                for _ in 0..containers_to_remove {
+                    if let Some(container_id) = container_ids.pop() {
+                        let container = self.docker.containers().get(&container_id);
+                        let _ = container.stop(None); // Stop gracefully
+                        let _ = container.remove(Some(true), None); // Force remove
+                    }
+                }
+            }
+        }
+        
         Ok(())
     }
     
@@ -613,5 +836,248 @@ services:
         
         // For now, just return Ok - full implementation would restart containers
         Ok(())
+    }
+    
+    // Docker Compose Import Methods
+    
+    /// Create a stack from a docker-compose.yml file
+    #[staticmethod]
+    pub fn from_file(docker: Pyo3Docker, file_path: String) -> PyResult<Pyo3Stack> {
+        use std::fs;
+        
+        // Read the file
+        let yaml_content = fs::read_to_string(&file_path)
+            .map_err(|e| pyo3::exceptions::PyIOError::new_err(
+                format!("Failed to read docker-compose file '{}': {}", file_path, e)
+            ))?;
+        
+        // Parse and create stack
+        Self::from_yaml(docker, yaml_content)
+    }
+    
+    /// Create a stack from docker-compose YAML content
+    #[staticmethod] 
+    pub fn from_yaml(docker: Pyo3Docker, yaml_content: String) -> PyResult<Pyo3Stack> {
+        // Parse the docker-compose YAML
+        let compose: docker_compose_types::Compose = serde_yaml::from_str(&yaml_content)
+            .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(
+                format!("Failed to parse docker-compose YAML: {}", e)
+            ))?;
+        
+        // Extract stack name from the compose data or use default
+        let stack_name = "imported-stack".to_string(); // TODO: Better naming strategy
+        let mut stack = Pyo3Stack::new(docker, stack_name);
+        
+        // Import services
+        for (service_name, service_config) in compose.services.0 {
+            if let Some(service_config) = service_config {
+                let imported_service = Self::import_service(service_name.clone(), service_config)?;
+                stack.register_service(imported_service)?;
+            }
+        }
+        
+        // TODO: Import networks and volumes
+        
+        Ok(stack)
+    }
+}
+
+impl Pyo3Stack {
+    /// Convert a docker-compose service to a docker-pyo3 Service
+    fn import_service(name: String, config: docker_compose_types::Service) -> PyResult<Service> {
+        let mut service = Service::new(name);
+        
+        // Handle image
+        if let Some(image) = config.image {
+            service.image(image);
+        }
+        
+        // Handle build configuration
+        if let Some(build_config) = config.build_ {
+            match build_config {
+                docker_compose_types::BuildStep::Simple(context) => {
+                    service.build_context(context);
+                }
+                docker_compose_types::BuildStep::Advanced(build) => {
+                    // context is required in AdvancedBuildStep
+                    let context = build.context;
+                    if let Some(dockerfile) = build.dockerfile {
+                        service.build_with_dockerfile(context.clone(), dockerfile);
+                    } else {
+                        service.build_context(context);
+                    }
+                    
+                    // Handle build args
+                    if let Some(args) = build.args {
+                        match args {
+                            docker_compose_types::BuildArgs::Simple(args_str) => {
+                                if let Some((key, value)) = args_str.split_once('=') {
+                                    service.build_arg(key.to_string(), value.to_string());
+                                }
+                            }
+                            docker_compose_types::BuildArgs::List(args_vec) => {
+                                for arg in args_vec {
+                                    if let Some((key, value)) = arg.split_once('=') {
+                                        service.build_arg(key.to_string(), value.to_string());
+                                    }
+                                }
+                            }
+                            docker_compose_types::BuildArgs::KvPair(args_map) => {
+                                for (key, value) in args_map {
+                                    service.build_arg(key, value);
+                                }
+                            }
+                        }
+                    }
+                    
+                    // Handle target
+                    if let Some(target) = build.target {
+                        service.build_target(target);
+                    }
+                }
+            }
+        }
+        
+        // Handle command
+        if let Some(command) = config.command {
+            match command {
+                docker_compose_types::Command::Simple(cmd_str) => {
+                    let cmd_parts: Vec<String> = cmd_str.split_whitespace()
+                        .map(|s| s.to_string()).collect();
+                    service.command(cmd_parts);
+                }
+                docker_compose_types::Command::Args(cmd_vec) => {
+                    service.command(cmd_vec);
+                }
+            }
+        }
+        
+        // Handle environment variables - environment is a direct value, not Option
+        match config.environment {
+            docker_compose_types::Environment::List(env_list) => {
+                for env_var in env_list {
+                    if let Some((key, value)) = env_var.split_once('=') {
+                        service.env(key.to_string(), value.to_string());
+                    }
+                }
+            }
+            docker_compose_types::Environment::KvPair(env_map) => {
+                for (key, value) in env_map {
+                    let value_str = match value {
+                        Some(v) => match v {
+                            // SingleValue can be a string or other types, convert to string
+                            _ => v.to_string(),
+                        },
+                        None => String::new(),
+                    };
+                    service.env(key, value_str);
+                }
+            }
+        }
+        
+        // Handle ports - ports is a direct value, not Option
+        match config.ports {
+            docker_compose_types::Ports::Short(port_strings) => {
+                service.ports(port_strings);
+            }
+            docker_compose_types::Ports::Long(port_configs) => {
+                let port_strings: Vec<String> = port_configs.into_iter().map(|port_config| {
+                    // Convert detailed port config to simple string format
+                    let target = port_config.target;
+                    if let Some(published) = port_config.published {
+                        // published is of type PublishedPort, need to handle appropriately
+                        let published_str = match published {
+                            docker_compose_types::PublishedPort::Single(port) => port.to_string(),
+                            docker_compose_types::PublishedPort::Range(range) => range,
+                        };
+                        format!("{}:{}", published_str, target)
+                    } else {
+                        target.to_string()
+                    }
+                }).collect();
+                service.ports(port_strings);
+            }
+        }
+        
+        // Handle volumes - volumes is a direct Vec, not Option
+        let volume_strings: Vec<String> = config.volumes.into_iter().map(|volume| {
+            match volume {
+                docker_compose_types::Volumes::Simple(vol_str) => vol_str,
+                docker_compose_types::Volumes::Advanced(vol_config) => {
+                    // Convert to simple volume format - handle AdvancedVolumes structure
+                    format!("{}:{}", vol_config.source.unwrap_or_default(), vol_config.target)
+                }
+            }
+        }).collect();
+        for volume in volume_strings {
+            service.volume(volume);
+        }
+        
+        // Handle working directory
+        if let Some(working_dir) = config.working_dir {
+            service.working_dir(working_dir);
+        }
+        
+        // Handle hostname
+        if let Some(hostname) = config.hostname {
+            service.hostname(hostname);
+        }
+        
+        // Handle restart policy
+        if let Some(restart) = config.restart {
+            service.restart_policy(restart);
+        }
+        
+        // Handle depends_on - depends_on is a direct value, not Option
+        match config.depends_on {
+            docker_compose_types::DependsOnOptions::Simple(deps) => {
+                for dep in deps {
+                    service.depends_on_service(dep);
+                }
+            }
+            docker_compose_types::DependsOnOptions::Conditional(deps) => {
+                // For conditional dependencies, just use the service names
+                for (service_name, _condition) in deps {
+                    service.depends_on_service(service_name);
+                }
+            }
+        }
+        
+        // Handle labels - labels is a direct value, not Option
+        match config.labels {
+            docker_compose_types::Labels::List(label_list) => {
+                for label in label_list {
+                    if let Some((key, value)) = label.split_once('=') {
+                        service.label(key.to_string(), value.to_string());
+                    }
+                }
+            }
+            docker_compose_types::Labels::Map(label_map) => {
+                for (key, value) in label_map {
+                    service.label(key, value);
+                }
+            }
+        }
+        
+        // Handle resource limits
+        if let Some(deploy) = config.deploy {
+            if let Some(resources) = deploy.resources {
+                if let Some(limits) = resources.limits {
+                    if let Some(memory) = limits.memory {
+                        service.memory(memory);
+                    }
+                    if let Some(cpus) = limits.cpus {
+                        service.cpus(cpus);
+                    }
+                }
+                if let Some(reservations) = resources.reservations {
+                    if let Some(memory) = reservations.memory {
+                        service.memory_reservation(memory);
+                    }
+                }
+            }
+        }
+        
+        Ok(service)
     }
 }

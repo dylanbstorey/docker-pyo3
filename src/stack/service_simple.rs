@@ -432,6 +432,11 @@ impl Service {
         cloned.name = new_name.into();
         cloned
     }
+    
+    /// Get the raw command as Vec<String> for proper Docker API usage
+    pub fn get_raw_command(&self) -> Option<Vec<String>> {
+        self.command.clone()
+    }
 
     /// Get service configuration as a simple map for inspection
     pub fn to_config_map(&self) -> HashMap<String, String> {

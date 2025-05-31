@@ -210,6 +210,16 @@ impl Pyo3Docker {
     fn create_service(&self, name: String) -> Service {
         Service::new(name)
     }
+    
+    /// Import a stack from a docker-compose.yml file
+    fn import_stack_from_file(&self, file_path: String) -> PyResult<Pyo3Stack> {
+        Pyo3Stack::from_file(self.clone(), file_path)
+    }
+    
+    /// Import a stack from docker-compose YAML content
+    fn import_stack_from_yaml(&self, yaml_content: String) -> PyResult<Pyo3Stack> {
+        Pyo3Stack::from_yaml(self.clone(), yaml_content)
+    }
 }
 
 fn __version(docker: Pyo3Docker) -> Result<SystemVersion, docker_api::Error> {
@@ -228,24 +238,51 @@ fn __data_usage(docker: Pyo3Docker) -> Result<SystemDataUsage200Response, docker
     get_runtime().block_on(docker.0.data_usage())
 }
 
-/// A Python module implemented in Rust.
-#[pymodule]
-pub fn docker_pyo3(_py: Python, m: &PyModule) -> PyResult<()> {
+/// Register all docker-pyo3 classes and modules into a PyModule.
+/// This function can be used by other Rust crates to re-export docker-pyo3
+/// functionality under their own namespace.
+///
+/// # Example
+/// ```rust,ignore
+/// use pyo3::prelude::*;
+/// use docker_pyo3::register_module;
+///
+/// #[pymodule]
+/// fn my_module(py: Python, m: &PyModule) -> PyResult<()> {
+///     // Re-export docker-pyo3 under your module
+///     docker_pyo3::register_module(py, m, "my_module")?;
+///     
+///     // Add your own additional classes/functions
+///     // m.add_class::<MyClass>()?;
+///     
+///     Ok(())
+/// }
+/// ```
+pub fn register_module(py: Python, m: &PyModule, module_name: &str) -> PyResult<()> {
+    // Add main classes
     m.add_class::<Pyo3Docker>()?;
     m.add_class::<Pyo3Stack>()?;
     m.add_class::<Service>()?;
 
+    // Add submodules
     m.add_wrapped(wrap_pymodule!(image::image))?;
     m.add_wrapped(wrap_pymodule!(container::container))?;
     m.add_wrapped(wrap_pymodule!(network::network))?;
     m.add_wrapped(wrap_pymodule!(volume::volume))?;
 
-    let sys = PyModule::import(_py, "sys")?;
+    // Register submodules in sys.modules with the provided module name
+    let sys = PyModule::import(py, "sys")?;
     let sys_modules: &PyDict = sys.getattr("modules")?.downcast()?;
-    sys_modules.set_item("docker_pyo3.image", m.getattr("image")?)?;
-    sys_modules.set_item("docker_pyo3.container", m.getattr("container")?)?;
-    sys_modules.set_item("docker_pyo3.network", m.getattr("network")?)?;
-    sys_modules.set_item("docker_pyo3.volume", m.getattr("volume")?)?;
+    sys_modules.set_item(format!("{}.image", module_name), m.getattr("image")?)?;
+    sys_modules.set_item(format!("{}.container", module_name), m.getattr("container")?)?;
+    sys_modules.set_item(format!("{}.network", module_name), m.getattr("network")?)?;
+    sys_modules.set_item(format!("{}.volume", module_name), m.getattr("volume")?)?;
 
     Ok(())
+}
+
+/// A Python module implemented in Rust.
+#[pymodule]
+pub fn docker_pyo3(py: Python, m: &PyModule) -> PyResult<()> {
+    register_module(py, m, "docker_pyo3")
 }

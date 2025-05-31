@@ -98,7 +98,11 @@ impl Pyo3Images {
         let mut bo = ImageBuildOpts::builder(path);
 
         let labels: Option<HashMap<&str, &str>> = if labels.is_some() {
-            Some(labels.unwrap().extract().unwrap())
+            Some(labels.unwrap().extract().map_err(|_| {
+                DockerPyo3Error::InvalidParameter(
+                    "Labels must be a dictionary with string keys and values".to_string()
+                )
+            })?)
         } else {
             None
         };
