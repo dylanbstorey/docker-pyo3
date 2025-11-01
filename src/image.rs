@@ -366,7 +366,7 @@ impl Pyo3Image {
                 Err(e) => Err(py_sys_exception!(e)),
             }
         } else {
-            Err(exceptions::PySystemError::new_err("Unknow error occurred in export. (Seriously I don't know how you get here, open a ticket and tell me what happens)"))
+            Err(exceptions::PySystemError::new_err("Unknown error occurred in export. (Seriously I don't know how you get here, open a ticket and tell me what happens)"))
         }
     }
 

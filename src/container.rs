@@ -118,7 +118,9 @@ impl Pyo3Containers {
         } else {
             None
         };
-        let links: Option<Vec<&str>> = links.as_ref().map(|v| v.iter().map(|s| s.as_str()).collect());
+        let links: Option<Vec<&str>> = links
+            .as_ref()
+            .map(|v| v.iter().map(|s| s.as_str()).collect());
 
         bo_setter!(attach_stderr, create_opts);
         bo_setter!(attach_stdin, create_opts);

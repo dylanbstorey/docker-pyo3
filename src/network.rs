@@ -73,18 +73,18 @@ impl Pyo3Networks {
         } else {
             None
         };
-        let options: Option<HashMap<&str, &str>> = options_map.as_ref().map(|m| {
-            m.iter().map(|(k, v)| (k.as_str(), v.as_str())).collect()
-        });
+        let options: Option<HashMap<&str, &str>> = options_map
+            .as_ref()
+            .map(|m| m.iter().map(|(k, v)| (k.as_str(), v.as_str())).collect());
 
         let labels_map: Option<HashMap<String, String>> = if labels.is_some() {
             Some(labels.unwrap().extract().unwrap())
         } else {
             None
         };
-        let labels: Option<HashMap<&str, &str>> = labels_map.as_ref().map(|m| {
-            m.iter().map(|(k, v)| (k.as_str(), v.as_str())).collect()
-        });
+        let labels: Option<HashMap<&str, &str>> = labels_map
+            .as_ref()
+            .map(|m| m.iter().map(|(k, v)| (k.as_str(), v.as_str())).collect());
 
         bo_setter!(check_duplicate, network_opts);
         bo_setter!(driver, network_opts);
@@ -179,23 +179,27 @@ impl Pyo3Network {
         } else {
             None
         };
-        let aliases: Option<Vec<&str>> = aliases_strings.as_ref().map(|v| v.iter().map(|s| s.as_str()).collect());
+        let aliases: Option<Vec<&str>> = aliases_strings
+            .as_ref()
+            .map(|v| v.iter().map(|s| s.as_str()).collect());
 
         let links_strings: Option<Vec<String>> = if links.is_some() {
             links.unwrap().extract().unwrap()
         } else {
             None
         };
-        let links: Option<Vec<&str>> = links_strings.as_ref().map(|v| v.iter().map(|s| s.as_str()).collect());
+        let links: Option<Vec<&str>> = links_strings
+            .as_ref()
+            .map(|v| v.iter().map(|s| s.as_str()).collect());
 
         let driver_opts_map: Option<HashMap<String, String>> = if driver_opts.is_some() {
             driver_opts.unwrap().extract().unwrap()
         } else {
             None
         };
-        let driver_opts: Option<HashMap<&str, &str>> = driver_opts_map.as_ref().map(|m| {
-            m.iter().map(|(k, v)| (k.as_str(), v.as_str())).collect()
-        });
+        let driver_opts: Option<HashMap<&str, &str>> = driver_opts_map
+            .as_ref()
+            .map(|m| m.iter().map(|(k, v)| (k.as_str(), v.as_str())).collect());
 
         bo_setter!(network_id, connect_opts);
         bo_setter!(endpoint_id, connect_opts);

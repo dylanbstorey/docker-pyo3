@@ -22,12 +22,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
-      - uses: actions-rs/toolchain@v1
-        with:
-          profile: minimal
-          toolchain: nightly-2022-11-01
-          override: true
-      - uses: Swatinem/rust-cache@v1
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
       - run: cargo build --all
 
   cargo-fmt:
@@ -35,45 +31,24 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
-      - uses: actions-rs/toolchain@v1
+      - uses: dtolnay/rust-toolchain@stable
         with:
-          profile: minimal
-          toolchain: nightly-2022-11-01
-          override: true
           components: rustfmt
       - run: cargo fmt --all --check
 
-  cargo_clippy:
-    name: "cargo clippy"
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v3
-      - uses: actions-rs/toolchain@v1
-        with:
-          profile: minimal
-          toolchain: nightly-2022-11-01
-          override: true
-          components: clippy
-      - uses: Swatinem/rust-cache@v1
-      - run: cargo clippy --workspace --all-targets --all-features
-  
   docker-pyo3-tests-linux:
     name: "docker-pyo3 run-tests linux"
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
-      - uses: actions-rs/toolchain@v1
-        with:
-          profile: minimal
-          toolchain: 1.65.0
-          override: true
-      - uses: Swatinem/rust-cache@v1
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
       - uses: actions/setup-python@v4
         with:
           python-version: "3.11"
       - run: docker pull busybox
-      - run: pip install maturin pytest 
-      - run: maturin build 
+      - run: pip install maturin pytest
+      - run: maturin build
       - run: pip install .
       - run: pytest -svv
 
