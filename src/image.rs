@@ -18,7 +18,7 @@ use pythonize::pythonize;
 use std::io::Write;
 
 #[pymodule]
-pub fn image(_py: Python<'_>, m: &PyModule) -> PyResult<()> {
+pub fn image(_py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<Pyo3Images>()?;
     m.add_class::<Pyo3Image>()?;
     Ok(())
@@ -43,11 +43,12 @@ impl Pyo3Images {
         Pyo3Image(self.0.get(name))
     }
 
+    #[pyo3(signature = (all=None, digests=None, filter=None))]
     fn list(
         &self,
         all: Option<bool>,
         digests: Option<bool>,
-        _filter: Option<&str>,
+        filter: Option<&str>,
     ) -> PyResult<Py<PyAny>> {
         let mut opts = ImageListOpts::builder();
         bo_setter!(all, opts);
@@ -68,6 +69,7 @@ impl Pyo3Images {
         }
     }
 
+    #[pyo3(signature = (path, *, dockerfile=None, tag=None, extra_hosts=None, remote=None, quiet=None, nocahe=None, pull=None, rm=None, forcerm=None, memory=None, memswap=None, cpu_shares=None, cpu_set_cpus=None, cpu_period=None, cpu_quota=None, shm_size=None, squash=None, network_mode=None, platform=None, target=None, outputs=None, labels=None))]
     fn build(
         &self,
         path: &str,
@@ -92,7 +94,7 @@ impl Pyo3Images {
         platform: Option<&str>,
         target: Option<&str>,
         outputs: Option<&str>,
-        _labels: Option<&PyDict>,
+        labels: Option<&Bound<'_, PyDict>>,
     ) -> PyResult<Py<PyAny>> {
         let mut bo = ImageBuildOpts::builder(path);
 
@@ -132,14 +134,15 @@ impl Pyo3Images {
     //     ))
     // }
 
+    #[pyo3(signature = (image=None, src=None, repo=None, tag=None, auth_password=None, auth_token=None))]
     fn pull(
         &self,
         image: Option<&str>,
         src: Option<&str>,
         repo: Option<&str>,
         tag: Option<&str>,
-        auth_password: Option<&PyDict>,
-        auth_token: Option<&PyDict>,
+        auth_password: Option<&Bound<'_, PyDict>>,
+        auth_token: Option<&Bound<'_, PyDict>>,
     ) -> PyResult<Py<PyAny>> {
         let mut pull_opts = PullOpts::builder();
 
@@ -149,34 +152,16 @@ impl Pyo3Images {
         }
 
         let auth = if auth_password.is_some() && auth_token.is_none() {
-            let username = auth_password.unwrap().get_item("username");
-            let password = auth_password.unwrap().get_item("password");
-            let email = auth_password.unwrap().get_item("email");
-            let server_address = auth_password.unwrap().get_item("server_address");
+            let auth_dict = auth_password.unwrap();
+            let username = auth_dict.get_item("username").unwrap_or(None);
+            let password = auth_dict.get_item("password").unwrap_or(None);
+            let email = auth_dict.get_item("email").unwrap_or(None);
+            let server_address = auth_dict.get_item("server_address").unwrap_or(None);
 
-            let username = if username.is_none() {
-                None
-            } else {
-                Some(username.unwrap().extract::<String>().unwrap())
-            };
-
-            let password = if password.is_none() {
-                None
-            } else {
-                Some(password.unwrap().extract::<String>().unwrap())
-            };
-
-            let email = if email.is_none() {
-                None
-            } else {
-                Some(email.unwrap().extract::<String>().unwrap())
-            };
-
-            let server_address = if server_address.is_none() {
-                None
-            } else {
-                Some(server_address.unwrap().extract::<String>().unwrap())
-            };
+            let username = username.map(|v| v.extract::<String>().unwrap());
+            let password = password.map(|v| v.extract::<String>().unwrap());
+            let email = email.map(|v| v.extract::<String>().unwrap());
+            let server_address = server_address.map(|v| v.extract::<String>().unwrap());
 
             let mut ra = RegistryAuth::builder();
 
@@ -191,7 +176,8 @@ impl Pyo3Images {
                 auth_token
                     .unwrap()
                     .get_item("identity_token")
-                    .unwrap()
+                    .unwrap_or(None)
+                    .expect("identity_token is required")
                     .extract::<String>()
                     .unwrap(),
             );
@@ -307,7 +293,7 @@ impl Pyo3Image {
         format!(
             "Image(id: {:?}, name: {})",
             inspect.id.unwrap(),
-            self.name()
+            self.0.name()
         )
     }
 
@@ -384,6 +370,7 @@ impl Pyo3Image {
         }
     }
 
+    #[pyo3(signature = (repo=None, tag=None))]
     fn tag(&self, repo: Option<&str>, tag: Option<&str>) -> PyResult<()> {
         let mut opts = TagOpts::builder();
 
@@ -400,8 +387,8 @@ impl Pyo3Image {
 
     fn push(
         &self,
-        auth_password: Option<&PyDict>,
-        auth_token: Option<&PyDict>,
+        auth_password: Option<&Bound<'_, PyDict>>,
+        auth_token: Option<&Bound<'_, PyDict>>,
         tag: Option<&str>,
     ) -> PyResult<()> {
         if auth_password.is_some() && auth_token.is_some() {
@@ -410,34 +397,16 @@ impl Pyo3Image {
         }
 
         let auth = if auth_password.is_some() && auth_token.is_none() {
-            let username = auth_password.unwrap().get_item("username");
-            let password = auth_password.unwrap().get_item("password");
-            let email = auth_password.unwrap().get_item("email");
-            let server_address = auth_password.unwrap().get_item("server_address");
+            let auth_dict = auth_password.unwrap();
+            let username = auth_dict.get_item("username").unwrap_or(None);
+            let password = auth_dict.get_item("password").unwrap_or(None);
+            let email = auth_dict.get_item("email").unwrap_or(None);
+            let server_address = auth_dict.get_item("server_address").unwrap_or(None);
 
-            let username = if username.is_none() {
-                None
-            } else {
-                Some(username.unwrap().extract::<String>().unwrap())
-            };
-
-            let password = if password.is_none() {
-                None
-            } else {
-                Some(password.unwrap().extract::<String>().unwrap())
-            };
-
-            let email = if email.is_none() {
-                None
-            } else {
-                Some(email.unwrap().extract::<String>().unwrap())
-            };
-
-            let server_address = if server_address.is_none() {
-                None
-            } else {
-                Some(server_address.unwrap().extract::<String>().unwrap())
-            };
+            let username = username.map(|v| v.extract::<String>().unwrap());
+            let password = password.map(|v| v.extract::<String>().unwrap());
+            let email = email.map(|v| v.extract::<String>().unwrap());
+            let server_address = server_address.map(|v| v.extract::<String>().unwrap());
 
             let mut ra = RegistryAuth::builder();
 
@@ -452,7 +421,8 @@ impl Pyo3Image {
                 auth_token
                     .unwrap()
                     .get_item("identity_token")
-                    .unwrap()
+                    .unwrap_or(None)
+                    .expect("identity_token is required")
                     .extract::<String>()
                     .unwrap(),
             );

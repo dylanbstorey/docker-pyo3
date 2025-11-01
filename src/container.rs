@@ -19,7 +19,7 @@ use tar::Archive;
 use crate::Pyo3Docker;
 
 #[pymodule]
-pub fn container(_py: Python<'_>, m: &PyModule) -> PyResult<()> {
+pub fn container(_py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<Pyo3Containers>()?;
     m.add_class::<Pyo3Container>()?;
     Ok(())
@@ -44,6 +44,7 @@ impl Pyo3Containers {
         Pyo3Container(self.0.get(id))
     }
 
+    #[pyo3(signature = (all=None, since=None, before=None, sized=None))]
     fn list(
         &self,
         all: Option<bool>,
@@ -70,6 +71,7 @@ impl Pyo3Containers {
             Err(rv) => Err(py_sys_exception!(rv)),
         }
     }
+    #[pyo3(signature = (image, *, attach_stderr=None, attach_stdin=None, attach_stdout=None, auto_remove=None, capabilities=None, command=None, cpu_shares=None, cpus=None, devices=None, entrypoint=None, env=None, expose=None, extra_hosts=None, labels=None, links=None, log_driver=None, memory=None, memory_swap=None, name=None, nano_cpus=None, network_mode=None, privileged=None, publish=None, publish_all_ports=None, restart_policy=None, security_options=None, stop_signal=None, stop_signal_num=None, stop_timeout=None, tty=None, user=None, userns_mode=None, volumes=None, volumes_from=None, working_dir=None))]
     fn create(
         &self,
         image: &str,
@@ -77,17 +79,17 @@ impl Pyo3Containers {
         attach_stdin: Option<bool>,
         attach_stdout: Option<bool>,
         auto_remove: Option<bool>,
-        _capabilities: Option<&PyList>,
-        _command: Option<&PyList>,
+        capabilities: Option<&Bound<'_, PyList>>,
+        command: Option<&Bound<'_, PyList>>,
         cpu_shares: Option<u32>,
         cpus: Option<f64>,
-        _devices: Option<&PyList>,
-        _entrypoint: Option<&PyList>,
-        _env: Option<&PyList>,
-        _expose: Option<&PyList>,
-        _extra_hosts: Option<&PyList>,
-        _labels: Option<&PyDict>,
-        links: Option<&PyList>,
+        devices: Option<&Bound<'_, PyList>>,
+        entrypoint: Option<&Bound<'_, PyList>>,
+        env: Option<&Bound<'_, PyList>>,
+        expose: Option<&Bound<'_, PyList>>,
+        extra_hosts: Option<&Bound<'_, PyList>>,
+        labels: Option<&Bound<'_, PyDict>>,
+        links: Option<&Bound<'_, PyList>>,
         log_driver: Option<&str>,
         memory: Option<u64>,
         memory_swap: Option<i64>,
@@ -95,27 +97,28 @@ impl Pyo3Containers {
         nano_cpus: Option<u64>,
         network_mode: Option<&str>,
         privileged: Option<bool>,
-        _publish: Option<&PyList>,
-        _publish_all_ports: Option<bool>,
-        _restart_policy: Option<&PyDict>, // name,maximum_retry_count,
-        _security_options: Option<&PyList>,
+        publish: Option<&Bound<'_, PyList>>,
+        publish_all_ports: Option<bool>,
+        restart_policy: Option<&Bound<'_, PyDict>>, // name,maximum_retry_count,
+        security_options: Option<&Bound<'_, PyList>>,
         stop_signal: Option<&str>,
         stop_signal_num: Option<u64>,
-        _stop_timeout: Option<&PyDelta>,
+        stop_timeout: Option<&Bound<'_, PyDelta>>,
         tty: Option<bool>,
         user: Option<&str>,
         userns_mode: Option<&str>,
-        _volumes: Option<&PyList>,
-        _volumes_from: Option<&PyList>,
+        volumes: Option<&Bound<'_, PyList>>,
+        volumes_from: Option<&Bound<'_, PyList>>,
         working_dir: Option<&str>,
     ) -> PyResult<Pyo3Container> {
         let mut create_opts = ContainerCreateOpts::builder().image(image);
 
-        let links: Option<Vec<&str>> = if links.is_some() {
+        let links: Option<Vec<String>> = if links.is_some() {
             links.unwrap().extract().unwrap()
         } else {
             None
         };
+        let links: Option<Vec<&str>> = links.as_ref().map(|v| v.iter().map(|s| s.as_str()).collect());
 
         bo_setter!(attach_stderr, create_opts);
         bo_setter!(attach_stdin, create_opts);
@@ -201,10 +204,11 @@ impl Pyo3Container {
         self.0.id().to_string()
     }
 
-    fn inspect(&self) -> Py<PyAny> {
+    fn inspect(&self) -> PyResult<Py<PyAny>> {
         let ci = __container_inspect(&self.0);
-        pythonize_this!(ci)
+        Ok(pythonize_this!(ci))
     }
+    #[pyo3(signature = (stdout=None, stderr=None, timestamps=None, n_lines=None, all=None, since=None))]
     fn logs(
         &self,
         stdout: Option<bool>,
@@ -212,7 +216,7 @@ impl Pyo3Container {
         timestamps: Option<bool>,
         n_lines: Option<usize>,
         all: Option<bool>,
-        since: Option<&PyDateTime>,
+        since: Option<&Bound<'_, PyDateTime>>,
     ) -> String {
         let mut log_opts = LogsOpts::builder();
 
@@ -276,7 +280,7 @@ impl Pyo3Container {
         }
     }
 
-    fn stop(&self, wait: Option<&PyDelta>) -> PyResult<()> {
+    fn stop(&self, wait: Option<&Bound<'_, PyDelta>>) -> PyResult<()> {
         let wait: Option<std::time::Duration> = wait.map(|wait| {
             wait.extract::<chrono::Duration>()
                 .unwrap()
@@ -293,7 +297,7 @@ impl Pyo3Container {
         }
     }
 
-    fn restart(&self, wait: Option<&PyDelta>) -> PyResult<()> {
+    fn restart(&self, wait: Option<&Bound<'_, PyDelta>>) -> PyResult<()> {
         let wait: Option<std::time::Duration> = wait.map(|wait| {
             wait.extract::<chrono::Duration>()
                 .unwrap()
@@ -357,8 +361,8 @@ impl Pyo3Container {
 
     fn exec(
         &self,
-        command: &PyList,
-        env: Option<&PyList>,
+        command: &Bound<'_, PyList>,
+        env: Option<&Bound<'_, PyList>>,
         attach_stdout: Option<bool>,
         attach_stderr: Option<bool>,
         // detach_keys: Option<&str>,
@@ -367,11 +371,13 @@ impl Pyo3Container {
         user: Option<&str>,
         working_dir: Option<&str>,
     ) -> PyResult<()> {
-        let command: Vec<&str> = command.extract().unwrap();
+        let command_strings: Vec<String> = command.extract().unwrap();
+        let command: Vec<&str> = command_strings.iter().map(|s| s.as_str()).collect();
         let mut exec_opts = ExecCreateOpts::builder().command(command);
 
         if env.is_some() {
-            let env: Vec<&str> = env.unwrap().extract().unwrap();
+            let env_strings: Vec<String> = env.unwrap().extract().unwrap();
+            let env: Vec<&str> = env_strings.iter().map(|s| s.as_str()).collect();
             exec_opts = exec_opts.env(env);
         }
 

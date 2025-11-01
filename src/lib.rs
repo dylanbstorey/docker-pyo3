@@ -100,7 +100,7 @@ async fn __data_usage(docker: Pyo3Docker) -> SystemDataUsage200Response {
 
 /// A Python module implemented in Rust.
 #[pymodule]
-pub fn docker_pyo3(_py: Python, m: &PyModule) -> PyResult<()> {
+pub fn docker_pyo3(_py: Python, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<Pyo3Docker>()?;
 
     m.add_wrapped(wrap_pymodule!(image::image))?;
@@ -109,7 +109,7 @@ pub fn docker_pyo3(_py: Python, m: &PyModule) -> PyResult<()> {
     m.add_wrapped(wrap_pymodule!(volume::volume))?;
 
     let sys = PyModule::import(_py, "sys")?;
-    let sys_modules: &PyDict = sys.getattr("modules")?.downcast()?;
+    let sys_modules: Bound<'_, PyDict> = sys.getattr("modules")?.downcast_into()?;
     sys_modules.set_item("docker_pyo3.image", m.getattr("image")?)?;
     sys_modules.set_item("docker_pyo3.container", m.getattr("container")?)?;
     sys_modules.set_item("docker_pyo3.network", m.getattr("network")?)?;

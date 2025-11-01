@@ -8,7 +8,7 @@ macro_rules! bo_setter {
 
 macro_rules! pythonize_this {
     ($o:ident) => {{
-        Python::with_gil(|py| -> Py<PyAny> { pythonize(py, &$o).unwrap() })
+        Python::attach(|py| -> Py<PyAny> { pythonize(py, &$o).unwrap().into() })
     }};
 }
 

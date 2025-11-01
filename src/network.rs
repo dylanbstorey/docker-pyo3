@@ -10,7 +10,7 @@ use pyo3::types::{PyDict, PyList};
 use pythonize::pythonize;
 
 #[pymodule]
-pub fn network(_py: Python<'_>, m: &PyModule) -> PyResult<()> {
+pub fn network(_py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<Pyo3Networks>()?;
     m.add_class::<Pyo3Network>()?;
     Ok(())
@@ -53,6 +53,7 @@ impl Pyo3Networks {
         }
     }
 
+    #[pyo3(signature = (name, *, check_duplicate=None, driver=None, internal=None, attachable=None, ingress=None, enable_ipv6=None, options=None, labels=None))]
     pub fn create(
         &self,
         name: &str,
@@ -62,22 +63,28 @@ impl Pyo3Networks {
         attachable: Option<bool>,
         ingress: Option<bool>,
         enable_ipv6: Option<bool>,
-        options: Option<&PyDict>,
-        labels: Option<&PyDict>,
+        options: Option<&Bound<'_, PyDict>>,
+        labels: Option<&Bound<'_, PyDict>>,
     ) -> PyResult<Pyo3Network> {
         let mut network_opts = NetworkCreateOpts::builder(name);
 
-        let options: Option<HashMap<&str, &str>> = if options.is_some() {
+        let options_map: Option<HashMap<String, String>> = if options.is_some() {
             Some(options.unwrap().extract().unwrap())
         } else {
             None
         };
+        let options: Option<HashMap<&str, &str>> = options_map.as_ref().map(|m| {
+            m.iter().map(|(k, v)| (k.as_str(), v.as_str())).collect()
+        });
 
-        let labels: Option<HashMap<&str, &str>> = if options.is_some() {
+        let labels_map: Option<HashMap<String, String>> = if labels.is_some() {
             Some(labels.unwrap().extract().unwrap())
         } else {
             None
         };
+        let labels: Option<HashMap<&str, &str>> = labels_map.as_ref().map(|m| {
+            m.iter().map(|(k, v)| (k.as_str(), v.as_str())).collect()
+        });
 
         bo_setter!(check_duplicate, network_opts);
         bo_setter!(driver, network_opts);
@@ -147,12 +154,13 @@ impl Pyo3Network {
         }
     }
 
+    #[pyo3(signature = (container_id, ipam_config=None, aliases=None, links=None, network_id=None, endpoint_id=None, gateway=None, ipv4=None, prefix_len=None, ipv6_gateway=None, ipv6=None, ipv6_prefix_len=None, mac=None, driver_opts=None))]
     pub fn connect(
         &self,
         container_id: &str,
-        _ipam_config: Option<&str>,
-        aliases: Option<&PyList>,
-        links: Option<&PyList>,
+        ipam_config: Option<&str>,
+        aliases: Option<&Bound<'_, PyList>>,
+        links: Option<&Bound<'_, PyList>>,
         network_id: Option<&str>,
         endpoint_id: Option<&str>,
         gateway: Option<&str>,
@@ -162,27 +170,32 @@ impl Pyo3Network {
         ipv6: Option<&str>,
         ipv6_prefix_len: Option<i64>,
         mac: Option<&str>,
-        driver_opts: Option<&PyDict>,
+        driver_opts: Option<&Bound<'_, PyDict>>,
     ) -> PyResult<()> {
         let mut connect_opts = ContainerConnectionOpts::builder(container_id);
 
-        let aliases: Option<Vec<&str>> = if aliases.is_some() {
+        let aliases_strings: Option<Vec<String>> = if aliases.is_some() {
             aliases.unwrap().extract().unwrap()
         } else {
             None
         };
+        let aliases: Option<Vec<&str>> = aliases_strings.as_ref().map(|v| v.iter().map(|s| s.as_str()).collect());
 
-        let links: Option<Vec<&str>> = if links.is_some() {
+        let links_strings: Option<Vec<String>> = if links.is_some() {
             links.unwrap().extract().unwrap()
         } else {
             None
         };
+        let links: Option<Vec<&str>> = links_strings.as_ref().map(|v| v.iter().map(|s| s.as_str()).collect());
 
-        let driver_opts: Option<HashMap<&str, &str>> = if driver_opts.is_some() {
+        let driver_opts_map: Option<HashMap<String, String>> = if driver_opts.is_some() {
             driver_opts.unwrap().extract().unwrap()
         } else {
             None
         };
+        let driver_opts: Option<HashMap<&str, &str>> = driver_opts_map.as_ref().map(|m| {
+            m.iter().map(|(k, v)| (k.as_str(), v.as_str())).collect()
+        });
 
         bo_setter!(network_id, connect_opts);
         bo_setter!(endpoint_id, connect_opts);
@@ -208,6 +221,7 @@ impl Pyo3Network {
         }
     }
 
+    #[pyo3(signature = (container_id, force=None))]
     pub fn disconnect(&self, container_id: &str, force: Option<bool>) -> PyResult<()> {
         let mut disconnect_opts = ContainerDisconnectionOpts::builder(container_id);
         bo_setter!(force, disconnect_opts);

@@ -12,7 +12,7 @@ use pyo3::types::PyDict;
 use pythonize::pythonize;
 
 #[pymodule]
-pub fn volume(_py: Python<'_>, m: &PyModule) -> PyResult<()> {
+pub fn volume(_py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<Pyo3Volumes>()?;
     m.add_class::<Pyo3Volume>()?;
     Ok(())
@@ -55,12 +55,13 @@ impl Pyo3Volumes {
         }
     }
 
+    #[pyo3(signature = (name=None, driver=None, driver_opts=None, labels=None))]
     pub fn create(
         &self,
         name: Option<&str>,
         driver: Option<&str>,
-        _driver_opts: Option<&PyDict>,
-        _labels: Option<&PyDict>,
+        driver_opts: Option<&Bound<'_, PyDict>>,
+        labels: Option<&Bound<'_, PyDict>>,
     ) -> PyResult<Py<PyAny>> {
         let mut opts = VolumeCreateOpts::builder();
         bo_setter!(name, opts);
