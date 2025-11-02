@@ -26,10 +26,12 @@ pub fn image(_py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     Ok(())
 }
 
+/// Interface for managing Docker images collection.
 #[derive(Debug)]
 #[pyclass(name = "Images")]
 pub struct Pyo3Images(pub Images);
 
+/// Represents an individual Docker image.
 #[derive(Debug)]
 #[pyclass(name = "Image")]
 pub struct Pyo3Image(pub Image);
@@ -41,10 +43,30 @@ impl Pyo3Images {
         Pyo3Images(Images::new(docker.0))
     }
 
+    /// Get a specific image by name, ID, or tag.
+    ///
+    /// Args:
+    ///     name: Image name, ID, or tag (e.g., "busybox", "busybox:latest")
+    ///
+    /// Returns:
+    ///     Image: Image instance
     fn get(&self, name: &str) -> Pyo3Image {
         Pyo3Image(self.0.get(name))
     }
 
+    /// List images.
+    ///
+    /// Args:
+    ///     all: Show all images (default hides intermediate images)
+    ///     digests: Show digests
+    ///     filter: Filter images by dict with type and value:
+    ///             - {"type": "dangling"}: dangling images
+    ///             - {"type": "label", "key": "foo", "value": "bar"}: by label
+    ///             - {"type": "before", "value": "image:tag"}: images before specified
+    ///             - {"type": "since", "value": "image:tag"}: images since specified
+    ///
+    /// Returns:
+    ///     list[dict]: List of image information dictionaries
     #[pyo3(signature = (all=None, digests=None, filter=None))]
     fn list(
         &self,
@@ -117,6 +139,10 @@ impl Pyo3Images {
         }
     }
 
+    /// Remove unused images.
+    ///
+    /// Returns:
+    ///     dict: Prune results including images deleted and space reclaimed
     fn prune(&self) -> PyResult<Py<PyAny>> {
         match __images_prune(&self.0) {
             Ok(info) => Ok(pythonize_this!(info)),
@@ -124,6 +150,35 @@ impl Pyo3Images {
         }
     }
 
+    /// Build an image from a Dockerfile.
+    ///
+    /// Args:
+    ///     path: Path to build context directory
+    ///     dockerfile: Path to Dockerfile relative to build context
+    ///     tag: Tag for the built image (e.g., "myimage:latest")
+    ///     extra_hosts: Extra hosts to add to /etc/hosts
+    ///     remote: Remote repository URL
+    ///     quiet: Suppress build output
+    ///     nocahe: Do not use cache when building
+    ///     pull: Attempt to pull newer version of base image
+    ///     rm: Remove intermediate containers after build
+    ///     forcerm: Always remove intermediate containers
+    ///     memory: Memory limit in bytes
+    ///     memswap: Total memory limit (memory + swap)
+    ///     cpu_shares: CPU shares (relative weight)
+    ///     cpu_set_cpus: CPUs to allow execution (e.g., "0-3", "0,1")
+    ///     cpu_period: CPU CFS period in microseconds
+    ///     cpu_quota: CPU CFS quota in microseconds
+    ///     shm_size: Size of /dev/shm in bytes
+    ///     squash: Squash newly built layers into single layer
+    ///     network_mode: Network mode (e.g., "bridge", "host", "none")
+    ///     platform: Target platform (e.g., "linux/amd64")
+    ///     target: Build stage to target
+    ///     outputs: Output configuration
+    ///     labels: Labels as dict (e.g., {"version": "1.0"})
+    ///
+    /// Returns:
+    ///     dict: Build result information
     #[pyo3(signature = (path, *, dockerfile=None, tag=None, extra_hosts=None, remote=None, quiet=None, nocahe=None, pull=None, rm=None, forcerm=None, memory=None, memswap=None, cpu_shares=None, cpu_set_cpus=None, cpu_period=None, cpu_quota=None, shm_size=None, squash=None, network_mode=None, platform=None, target=None, outputs=None, labels=None))]
     fn build(
         &self,
@@ -200,6 +255,21 @@ impl Pyo3Images {
     //     ))
     // }
 
+    /// Pull an image from a registry.
+    ///
+    /// Args:
+    ///     image: Image name to pull (e.g., "busybox", "ubuntu:latest")
+    ///     src: Source repository
+    ///     repo: Repository to pull from
+    ///     tag: Tag to pull
+    ///     auth_password: Password authentication dict with username, password, email, server_address
+    ///     auth_token: Token authentication dict with identity_token
+    ///
+    /// Returns:
+    ///     dict: Pull result information
+    ///
+    /// Raises:
+    ///     SystemError: If both auth_password and auth_token are provided
     #[pyo3(signature = (image=None, src=None, repo=None, tag=None, auth_password=None, auth_token=None))]
     fn pull(
         &self,
@@ -367,11 +437,19 @@ impl Pyo3Image {
         self.__repr__()
     }
 
+    /// Get the image name.
+    ///
+    /// Returns:
+    ///     str: Image name
     fn name(&self) -> Py<PyAny> {
         let rv = self.0.name();
         pythonize_this!(rv)
     }
 
+    /// Inspect the image to get detailed information.
+    ///
+    /// Returns:
+    ///     dict: Detailed image information including config, layers, etc.
     fn inspect(&self) -> PyResult<Py<PyAny>> {
         let rv = __image_inspect(&self.0);
         match rv {
@@ -380,12 +458,17 @@ impl Pyo3Image {
         }
     }
 
+    /// Remove the image (not implemented yet).
     fn remove(&self) -> PyResult<()> {
         Err(exceptions::PyNotImplementedError::new_err(
             "This method is not available yet.",
         ))
     }
 
+    /// Delete the image.
+    ///
+    /// Returns:
+    ///     str: Deletion result information
     fn delete(&self) -> PyResult<String> {
         let rv = __image_delete(&self.0);
         match rv {
@@ -401,6 +484,10 @@ impl Pyo3Image {
         }
     }
 
+    /// Get the image history.
+    ///
+    /// Returns:
+    ///     str: Image history information
     fn history(&self) -> PyResult<String> {
         let rv = __image_history(&self.0);
 
@@ -417,6 +504,13 @@ impl Pyo3Image {
         }
     }
 
+    /// Export the image to a tar file.
+    ///
+    /// Args:
+    ///     path: Path to save the exported tar file
+    ///
+    /// Returns:
+    ///     str: Path to the exported file
     fn export(&self, path: Option<&str>) -> PyResult<String> {
         let path = if path.is_none() {
             format!("{:?}", &self.0)
@@ -436,6 +530,14 @@ impl Pyo3Image {
         }
     }
 
+    /// Tag the image with a new name and/or tag.
+    ///
+    /// Args:
+    ///     repo: Repository name (e.g., "myrepo/myimage")
+    ///     tag: Tag name (e.g., "v1.0", "latest")
+    ///
+    /// Returns:
+    ///     None
     #[pyo3(signature = (repo=None, tag=None))]
     fn tag(&self, repo: Option<&str>, tag: Option<&str>) -> PyResult<()> {
         let mut opts = TagOpts::builder();
@@ -451,6 +553,18 @@ impl Pyo3Image {
         }
     }
 
+    /// Push the image to a registry.
+    ///
+    /// Args:
+    ///     auth_password: Password authentication dict with username, password, email, server_address
+    ///     auth_token: Token authentication dict with identity_token
+    ///     tag: Tag to push
+    ///
+    /// Returns:
+    ///     None
+    ///
+    /// Raises:
+    ///     SystemError: If both auth_password and auth_token are provided
     fn push(
         &self,
         auth_password: Option<&Bound<'_, PyDict>>,

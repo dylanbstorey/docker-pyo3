@@ -26,10 +26,12 @@ pub fn container(_py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     Ok(())
 }
 
+/// Interface for managing Docker containers collection.
 #[derive(Debug)]
 #[pyclass(name = "Containers")]
 pub struct Pyo3Containers(pub Containers);
 
+/// Represents an individual Docker container.
 #[derive(Debug)]
 #[pyclass(name = "Container")]
 pub struct Pyo3Container(pub Container);
@@ -41,10 +43,27 @@ impl Pyo3Containers {
         Pyo3Containers(Containers::new(docker.0))
     }
 
+    /// Get a specific container by ID or name.
+    ///
+    /// Args:
+    ///     id: Container ID or name
+    ///
+    /// Returns:
+    ///     Container: Container instance
     fn get(&self, id: &str) -> Pyo3Container {
         Pyo3Container(self.0.get(id))
     }
 
+    /// List containers.
+    ///
+    /// Args:
+    ///     all: Show all containers (default shows only running)
+    ///     since: Show containers created since this container ID
+    ///     before: Show containers created before this container ID
+    ///     sized: Include size information
+    ///
+    /// Returns:
+    ///     list[dict]: List of container information dictionaries
     #[pyo3(signature = (all=None, since=None, before=None, sized=None))]
     fn list(
         &self,
@@ -64,6 +83,10 @@ impl Pyo3Containers {
         pythonize_this!(cs)
     }
 
+    /// Remove stopped containers.
+    ///
+    /// Returns:
+    ///     dict: Prune results including containers deleted and space reclaimed
     fn prune(&self) -> PyResult<Py<PyAny>> {
         let rv = __containers_prune(&self.0, &Default::default());
 
@@ -72,6 +95,49 @@ impl Pyo3Containers {
             Err(rv) => Err(py_sys_exception!(rv)),
         }
     }
+
+    /// Create a new container.
+    ///
+    /// Args:
+    ///     image: Image name to use for the container
+    ///     attach_stderr: Attach to stderr
+    ///     attach_stdin: Attach to stdin
+    ///     attach_stdout: Attach to stdout
+    ///     auto_remove: Automatically remove the container when it exits
+    ///     capabilities: List of Linux capabilities to add (e.g., ["NET_ADMIN", "SYS_TIME"])
+    ///     command: Command to run as list (e.g., ["/bin/sh", "-c", "echo hello"])
+    ///     cpu_shares: CPU shares (relative weight)
+    ///     cpus: Number of CPUs
+    ///     devices: List of device mappings, each a dict with PathOnHost, PathInContainer, CgroupPermissions
+    ///     entrypoint: Entrypoint as list (e.g., ["/bin/sh"])
+    ///     env: Environment variables as list (e.g., ["VAR=value"])
+    ///     expose: List of port mappings to expose as dicts with srcport, hostport, protocol
+    ///     extra_hosts: Extra host-to-IP mappings as list (e.g., ["hostname:192.168.1.1"])
+    ///     labels: Labels as dict (e.g., {"app": "myapp", "env": "prod"})
+    ///     links: Links to other containers as list
+    ///     log_driver: Logging driver (e.g., "json-file", "syslog")
+    ///     memory: Memory limit in bytes
+    ///     memory_swap: Total memory limit (memory + swap)
+    ///     name: Container name
+    ///     nano_cpus: CPU quota in units of 10^-9 CPUs
+    ///     network_mode: Network mode (e.g., "bridge", "host", "none")
+    ///     privileged: Give extended privileges to this container
+    ///     publish: List of ports to publish as dicts with port, protocol
+    ///     publish_all_ports: Publish all exposed ports to random ports
+    ///     restart_policy: Restart policy as dict with name and maximum_retry_count
+    ///     security_options: Security options as list (e.g., ["label=user:USER"])
+    ///     stop_signal: Signal to stop the container
+    ///     stop_signal_num: Signal number to stop the container
+    ///     stop_timeout: Timeout for stopping the container (timedelta)
+    ///     tty: Allocate a pseudo-TTY
+    ///     user: Username or UID
+    ///     userns_mode: User namespace mode
+    ///     volumes: Volume bindings as list (e.g., ["/host:/container:rw"])
+    ///     volumes_from: Mount volumes from other containers as list
+    ///     working_dir: Working directory inside the container
+    ///
+    /// Returns:
+    ///     Container: Created container instance
     #[pyo3(signature = (image, *, attach_stderr=None, attach_stdin=None, attach_stdout=None, auto_remove=None, capabilities=None, command=None, cpu_shares=None, cpus=None, devices=None, entrypoint=None, env=None, expose=None, extra_hosts=None, labels=None, links=None, log_driver=None, memory=None, memory_swap=None, name=None, nano_cpus=None, network_mode=None, privileged=None, publish=None, publish_all_ports=None, restart_policy=None, security_options=None, stop_signal=None, stop_signal_num=None, stop_timeout=None, tty=None, user=None, userns_mode=None, volumes=None, volumes_from=None, working_dir=None))]
     fn create(
         &self,
@@ -381,14 +447,35 @@ impl Pyo3Container {
         Pyo3Container(Container::new(docker.0, id))
     }
 
+    /// Get the container ID.
+    ///
+    /// Returns:
+    ///     str: Container ID
     fn id(&self) -> String {
         self.0.id().to_string()
     }
 
+    /// Inspect the container to get detailed information.
+    ///
+    /// Returns:
+    ///     dict: Detailed container information including config, state, mounts, etc.
     fn inspect(&self) -> PyResult<Py<PyAny>> {
         let ci = __container_inspect(&self.0);
         Ok(pythonize_this!(ci))
     }
+
+    /// Get container logs.
+    ///
+    /// Args:
+    ///     stdout: Include stdout
+    ///     stderr: Include stderr
+    ///     timestamps: Include timestamps
+    ///     n_lines: Number of lines to return from the end of logs
+    ///     all: Return all logs
+    ///     since: Only return logs since this datetime
+    ///
+    /// Returns:
+    ///     str: Container logs
     #[pyo3(signature = (stdout=None, stderr=None, timestamps=None, n_lines=None, all=None, since=None))]
     fn logs(
         &self,
@@ -419,12 +506,20 @@ impl Pyo3Container {
         __container_logs(&self.0, &log_opts.build())
     }
 
+    /// Remove the container (not implemented yet).
     fn remove(&self) -> PyResult<()> {
         Err(exceptions::PyNotImplementedError::new_err(
             "This method is not available yet.",
         ))
     }
 
+    /// Delete the container.
+    ///
+    /// Returns:
+    ///     None
+    ///
+    /// Raises:
+    ///     SystemError: If the container cannot be deleted
     fn delete(&self) -> PyResult<()> {
         let rv = __container_delete(&self.0);
         if rv.is_ok() {
@@ -450,6 +545,13 @@ impl Pyo3Container {
     //     Ok(())
     // }
 
+    /// Start the container.
+    ///
+    /// Returns:
+    ///     None
+    ///
+    /// Raises:
+    ///     SystemError: If the container cannot be started
     fn start(&self) -> PyResult<()> {
         let rv = __container_start(&self.0);
 
@@ -461,6 +563,16 @@ impl Pyo3Container {
         }
     }
 
+    /// Stop the container.
+    ///
+    /// Args:
+    ///     wait: Time to wait before killing the container (timedelta)
+    ///
+    /// Returns:
+    ///     None
+    ///
+    /// Raises:
+    ///     SystemError: If the container cannot be stopped
     fn stop(&self, wait: Option<&Bound<'_, PyDelta>>) -> PyResult<()> {
         let wait: Option<std::time::Duration> = wait.map(|wait| {
             wait.extract::<chrono::Duration>()
@@ -478,6 +590,16 @@ impl Pyo3Container {
         }
     }
 
+    /// Restart the container.
+    ///
+    /// Args:
+    ///     wait: Time to wait before killing the container (timedelta)
+    ///
+    /// Returns:
+    ///     None
+    ///
+    /// Raises:
+    ///     SystemError: If the container cannot be restarted
     fn restart(&self, wait: Option<&Bound<'_, PyDelta>>) -> PyResult<()> {
         let wait: Option<std::time::Duration> = wait.map(|wait| {
             wait.extract::<chrono::Duration>()
@@ -495,6 +617,16 @@ impl Pyo3Container {
         }
     }
 
+    /// Kill the container by sending a signal.
+    ///
+    /// Args:
+    ///     signal: Signal to send (e.g., "SIGKILL", "SIGTERM")
+    ///
+    /// Returns:
+    ///     None
+    ///
+    /// Raises:
+    ///     SystemError: If the container cannot be killed
     fn kill(&self, signal: Option<&str>) -> PyResult<()> {
         let rv = __container_kill(&self.0, signal);
         match rv {
@@ -505,6 +637,16 @@ impl Pyo3Container {
         }
     }
 
+    /// Rename the container.
+    ///
+    /// Args:
+    ///     name: New name for the container
+    ///
+    /// Returns:
+    ///     None
+    ///
+    /// Raises:
+    ///     SystemError: If the container cannot be renamed
     fn rename(&self, name: &str) -> PyResult<()> {
         let rv = __container_rename(&self.0, name);
         match rv {
@@ -515,6 +657,13 @@ impl Pyo3Container {
         }
     }
 
+    /// Pause the container.
+    ///
+    /// Returns:
+    ///     None
+    ///
+    /// Raises:
+    ///     SystemError: If the container cannot be paused
     fn pause(&self) -> PyResult<()> {
         let rv = __container_pause(&self.0);
         match rv {
@@ -525,6 +674,13 @@ impl Pyo3Container {
         }
     }
 
+    /// Unpause the container.
+    ///
+    /// Returns:
+    ///     None
+    ///
+    /// Raises:
+    ///     SystemError: If the container cannot be unpaused
     fn unpause(&self) -> PyResult<()> {
         let rv = __container_unpause(&self.0);
         match rv {
@@ -535,11 +691,33 @@ impl Pyo3Container {
         }
     }
 
+    /// Wait for the container to stop.
+    ///
+    /// Returns:
+    ///     dict: Wait response including status code
     fn wait(&self) -> Py<PyAny> {
         let rv = __container_wait(&self.0).unwrap();
         pythonize_this!(rv)
     }
 
+    /// Execute a command in the running container.
+    ///
+    /// Args:
+    ///     command: Command to execute as list (e.g., ["/bin/sh", "-c", "ls"])
+    ///     env: Environment variables as list (e.g., ["VAR=value"])
+    ///     attach_stdout: Attach to stdout
+    ///     attach_stderr: Attach to stderr
+    ///     detach_keys: Override key sequence for detaching
+    ///     tty: Allocate a pseudo-TTY
+    ///     privileged: Run with extended privileges
+    ///     user: Username or UID
+    ///     working_dir: Working directory for the exec session
+    ///
+    /// Returns:
+    ///     None
+    ///
+    /// Raises:
+    ///     SystemError: If the command cannot be executed
     fn exec(
         &self,
         command: &Bound<'_, PyList>,

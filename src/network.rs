@@ -16,10 +16,12 @@ pub fn network(_py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     Ok(())
 }
 
+/// Interface for managing Docker networks collection.
 #[derive(Debug)]
 #[pyclass(name = "Networks")]
 pub struct Pyo3Networks(pub Networks);
 
+/// Represents an individual Docker network.
 #[derive(Debug)]
 #[pyclass(name = "Network")]
 pub struct Pyo3Network(pub Network);
@@ -31,10 +33,21 @@ impl Pyo3Networks {
         Pyo3Networks(Networks::new(docker.0))
     }
 
+    /// Get a specific network by ID or name.
+    ///
+    /// Args:
+    ///     id: Network ID or name
+    ///
+    /// Returns:
+    ///     Network: Network instance
     pub fn get(&self, id: &str) -> Pyo3Network {
         Pyo3Network(self.0.get(id))
     }
 
+    /// List all networks.
+    ///
+    /// Returns:
+    ///     list[dict]: List of network information dictionaries
     pub fn list(&self) -> PyResult<Py<PyAny>> {
         let rv = __networks_list(&self.0);
 
@@ -44,6 +57,10 @@ impl Pyo3Networks {
         }
     }
 
+    /// Remove unused networks.
+    ///
+    /// Returns:
+    ///     dict: Prune results including networks deleted
     pub fn prune(&self) -> PyResult<Py<PyAny>> {
         let rv = __networks_prune(&self.0, &Default::default());
 
@@ -53,6 +70,21 @@ impl Pyo3Networks {
         }
     }
 
+    /// Create a new network.
+    ///
+    /// Args:
+    ///     name: Network name
+    ///     check_duplicate: Check for duplicate networks with the same name
+    ///     driver: Network driver (e.g., "bridge", "overlay")
+    ///     internal: Restrict external access to the network
+    ///     attachable: Enable manual container attachment
+    ///     ingress: Create an ingress network
+    ///     enable_ipv6: Enable IPv6 networking
+    ///     options: Driver-specific options as dict
+    ///     labels: Labels as dict (e.g., {"env": "prod"})
+    ///
+    /// Returns:
+    ///     Network: Created network instance
     #[pyo3(signature = (name, *, check_duplicate=None, driver=None, internal=None, attachable=None, ingress=None, enable_ipv6=None, options=None, labels=None))]
     pub fn create(
         &self,
@@ -133,10 +165,18 @@ impl Pyo3Network {
         Pyo3Network(Network::new(docker.0, id))
     }
 
+    /// Get the network ID.
+    ///
+    /// Returns:
+    ///     str: Network ID
     pub fn id(&self) -> String {
         self.0.id().to_string()
     }
 
+    /// Inspect the network to get detailed information.
+    ///
+    /// Returns:
+    ///     dict: Detailed network information including config, containers, etc.
     pub fn inspect(&self) -> PyResult<Py<PyAny>> {
         let rv = __network_inspect(&self.0);
 
@@ -146,6 +186,10 @@ impl Pyo3Network {
         }
     }
 
+    /// Delete the network.
+    ///
+    /// Returns:
+    ///     None
     pub fn delete(&self) -> PyResult<()> {
         let rv = __network_delete(&self.0);
         match rv {
@@ -154,6 +198,26 @@ impl Pyo3Network {
         }
     }
 
+    /// Connect a container to this network.
+    ///
+    /// Args:
+    ///     container_id: Container ID or name to connect
+    ///     aliases: Network aliases for the container as list
+    ///     links: Links to other containers as list
+    ///     network_id: Network ID
+    ///     endpoint_id: Endpoint ID
+    ///     gateway: IPv4 gateway address
+    ///     ipv4: IPv4 address for the container
+    ///     prefix_len: IPv4 prefix length
+    ///     ipv6_gateway: IPv6 gateway address
+    ///     ipv6: IPv6 address for the container
+    ///     ipv6_prefix_len: IPv6 prefix length
+    ///     mac: MAC address
+    ///     driver_opts: Driver-specific options as dict
+    ///     ipam_config: IPAM configuration as dict with ipv4, ipv6, link_local_ips
+    ///
+    /// Returns:
+    ///     None
     #[pyo3(signature = (container_id, aliases=None, links=None, network_id=None, endpoint_id=None, gateway=None, ipv4=None, prefix_len=None, ipv6_gateway=None, ipv6=None, ipv6_prefix_len=None, mac=None, driver_opts=None, ipam_config=None))]
     pub fn connect(
         &self,
@@ -245,6 +309,14 @@ impl Pyo3Network {
         }
     }
 
+    /// Disconnect a container from this network.
+    ///
+    /// Args:
+    ///     container_id: Container ID or name to disconnect
+    ///     force: Force disconnect even if container is running
+    ///
+    /// Returns:
+    ///     None
     #[pyo3(signature = (container_id, force=None))]
     pub fn disconnect(&self, container_id: &str, force: Option<bool>) -> PyResult<()> {
         let mut disconnect_opts = ContainerDisconnectionOpts::builder(container_id);
