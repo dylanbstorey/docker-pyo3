@@ -28,7 +28,7 @@ jobs:
           args: --release --out dist --sdist -i 3.10 3.11 3.12 3.13 3.14
       - name: Install built wheel - x86_64
         run: |
-          pip install docker-pyo3 --no-index --find-links dist --force-reinstall
+          pip install docker-pyo3 --find-links dist --force-reinstall
       - name: Upload wheels
         uses: actions/upload-artifact@v4
         with:
@@ -52,7 +52,7 @@ jobs:
           args: --release --out dist -i 3.10 3.11 3.12 3.13 3.14
       - name: Install built wheel - universal2
         run: |
-          pip install docker-pyo3 --no-index --find-links dist --force-reinstall
+          pip install docker-pyo3 --find-links dist --force-reinstall
       - name: Upload wheels
         uses: actions/upload-artifact@v4
         with:
@@ -76,7 +76,7 @@ jobs:
           args: --release --out dist -i 3.10 3.11 3.12 3.13 3.14
       - name: Install built wheel
         run: |
-          pip install docker-pyo3 --no-index --find-links dist --force-reinstall
+          pip install docker-pyo3 --find-links dist --force-reinstall
       - name: Upload wheels
         uses: actions/upload-artifact@v4
         with:
@@ -101,7 +101,7 @@ jobs:
           args: --release --out dist -i 3.10 3.11 3.12 3.13 3.14
       - name: Install built wheel
         run: |
-          pip install docker-pyo3 --no-index --find-links dist --force-reinstall
+          pip install docker-pyo3 --find-links dist --force-reinstall
       - name: Upload wheels
         uses: actions/upload-artifact@v4
         with:
