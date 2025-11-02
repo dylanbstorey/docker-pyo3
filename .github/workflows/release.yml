@@ -27,7 +27,7 @@ jobs:
           pip install docker-pyo3 --no-index --find-links dist --force-reinstall
           
       - name: Upload wheels
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: wheels
           path: dist
@@ -50,7 +50,7 @@ jobs:
           pip install docker-pyo3 --no-index --find-links dist --force-reinstall
           
       - name: Upload wheels
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: wheels
           path: dist
@@ -80,7 +80,7 @@ jobs:
           pip install docker-pyo3 --no-index --find-links dist --force-reinstall
           
       - name: Upload wheels
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: wheels
           path: dist
@@ -109,7 +109,7 @@ jobs:
         pip install docker-pyo3 --no-index --find-links dist --force-reinstall
         
     - name: Upload wheels
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: wheels
         path: dist
@@ -146,7 +146,7 @@ jobs:
           pip3 install docker-pyo3 --no-index --find-links dist/ --force-reinstall
           
     - name: Upload wheels
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: wheels
         path: dist
@@ -183,7 +183,7 @@ jobs:
           pip3 install docker-pyo3 --no-index --find-links /io/dist/ --force-reinstall
           
     - name: Upload wheels
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: wheels
         path: dist
@@ -222,7 +222,7 @@ jobs:
           pip3 install docker-pyo3 --no-index --find-links dist/ --force-reinstall
           
     - name: Upload wheels
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: wheels
         path: dist
@@ -240,7 +240,7 @@ jobs:
       - musllinux-cross
     if: "startsWith(github.ref, 'refs/tags/')"
     steps:
-      - uses: actions/download-artifact@v2
+      - uses: actions/download-artifact@v4
         with:
           name: wheels
       - uses: actions/setup-python@v4
