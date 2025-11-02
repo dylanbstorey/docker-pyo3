@@ -4,7 +4,8 @@ use docker_api::models::{
     ContainerInspect200Response, ContainerPrune200Response, ContainerSummary, ContainerWaitResponse,
 };
 use docker_api::opts::{
-    ContainerCreateOpts, ContainerListOpts, ContainerPruneOpts, ExecCreateOpts, LogsOpts, PublishPort,
+    ContainerCreateOpts, ContainerListOpts, ContainerPruneOpts, ExecCreateOpts, LogsOpts,
+    PublishPort,
 };
 use docker_api::{Container, Containers};
 use futures_util::stream::StreamExt;
@@ -216,12 +217,8 @@ impl Pyo3Containers {
             .as_ref()
             .map(|m| m.iter().map(|(k, v)| (k.as_str(), v.as_str())).collect());
 
-        let stop_timeout_duration: Option<std::time::Duration> = stop_timeout.map(|st| {
-            st.extract::<chrono::Duration>()
-                .unwrap()
-                .to_std()
-                .unwrap()
-        });
+        let stop_timeout_duration: Option<std::time::Duration> =
+            stop_timeout.map(|st| st.extract::<chrono::Duration>().unwrap().to_std().unwrap());
         let stop_timeout = stop_timeout_duration;
 
         bo_setter!(attach_stderr, create_opts);
@@ -262,8 +259,14 @@ impl Pyo3Containers {
         if let Some(expose_list) = expose {
             for item in expose_list.iter() {
                 let port_dict: &Bound<'_, PyDict> = item.downcast()?;
-                let srcport: u32 = port_dict.get_item("srcport")?.expect("srcport required").extract()?;
-                let hostport: u32 = port_dict.get_item("hostport")?.expect("hostport required").extract()?;
+                let srcport: u32 = port_dict
+                    .get_item("srcport")?
+                    .expect("srcport required")
+                    .extract()?;
+                let hostport: u32 = port_dict
+                    .get_item("hostport")?
+                    .expect("hostport required")
+                    .extract()?;
                 let protocol: String = match port_dict.get_item("protocol")? {
                     Some(p) => p.extract()?,
                     None => "tcp".to_string(),
@@ -273,7 +276,12 @@ impl Pyo3Containers {
                     "tcp" => PublishPort::tcp(srcport),
                     "udp" => PublishPort::udp(srcport),
                     "sctp" => PublishPort::sctp(srcport),
-                    _ => return Err(exceptions::PyValueError::new_err(format!("unknown protocol: {}", protocol))),
+                    _ => {
+                        return Err(exceptions::PyValueError::new_err(format!(
+                            "unknown protocol: {}",
+                            protocol
+                        )))
+                    }
                 };
 
                 create_opts = create_opts.expose(publish_port, hostport);
@@ -284,7 +292,10 @@ impl Pyo3Containers {
         if let Some(publish_list) = publish {
             for item in publish_list.iter() {
                 let port_dict: &Bound<'_, PyDict> = item.downcast()?;
-                let port: u32 = port_dict.get_item("port")?.expect("port required").extract()?;
+                let port: u32 = port_dict
+                    .get_item("port")?
+                    .expect("port required")
+                    .extract()?;
                 let protocol: String = match port_dict.get_item("protocol")? {
                     Some(p) => p.extract()?,
                     None => "tcp".to_string(),
@@ -294,7 +305,12 @@ impl Pyo3Containers {
                     "tcp" => PublishPort::tcp(port),
                     "udp" => PublishPort::udp(port),
                     "sctp" => PublishPort::sctp(port),
-                    _ => return Err(exceptions::PyValueError::new_err(format!("unknown protocol: {}", protocol))),
+                    _ => {
+                        return Err(exceptions::PyValueError::new_err(format!(
+                            "unknown protocol: {}",
+                            protocol
+                        )))
+                    }
                 };
 
                 create_opts = create_opts.publish(publish_port);
@@ -307,12 +323,14 @@ impl Pyo3Containers {
 
         if restart_policy.is_some() {
             let policy_dict = restart_policy.unwrap();
-            let name = policy_dict.get_item("name")
+            let name = policy_dict
+                .get_item("name")
                 .unwrap_or(None)
                 .expect("restart_policy requires 'name' key")
                 .extract::<String>()
                 .unwrap();
-            let max_retry = policy_dict.get_item("maximum_retry_count")
+            let max_retry = policy_dict
+                .get_item("maximum_retry_count")
                 .unwrap_or(None)
                 .map(|v| v.extract::<u64>().unwrap())
                 .unwrap_or(0);

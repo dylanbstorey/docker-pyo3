@@ -72,26 +72,37 @@ impl Pyo3Images {
                                 ImageFilter::LabelKey(value.extract()?)
                             }
                         } else {
-                            return Err(exceptions::PyValueError::new_err("label filter requires 'value' (and optionally 'key')"));
+                            return Err(exceptions::PyValueError::new_err(
+                                "label filter requires 'value' (and optionally 'key')",
+                            ));
                         }
-                    },
+                    }
                     "before" => {
                         if let Some(value) = filter_dict.get_item("value")? {
                             let image_str: String = value.extract()?;
                             ImageFilter::Before(ImageName::tag(image_str, None::<String>))
                         } else {
-                            return Err(exceptions::PyValueError::new_err("before filter requires 'value'"));
+                            return Err(exceptions::PyValueError::new_err(
+                                "before filter requires 'value'",
+                            ));
                         }
-                    },
+                    }
                     "since" => {
                         if let Some(value) = filter_dict.get_item("value")? {
                             let image_str: String = value.extract()?;
                             ImageFilter::Since(ImageName::tag(image_str, None::<String>))
                         } else {
-                            return Err(exceptions::PyValueError::new_err("since filter requires 'value'"));
+                            return Err(exceptions::PyValueError::new_err(
+                                "since filter requires 'value'",
+                            ));
                         }
-                    },
-                    _ => return Err(exceptions::PyValueError::new_err(format!("unknown filter type: {}", filter_type_str))),
+                    }
+                    _ => {
+                        return Err(exceptions::PyValueError::new_err(format!(
+                            "unknown filter type: {}",
+                            filter_type_str
+                        )))
+                    }
                 };
 
                 opts = opts.filter([image_filter]);
