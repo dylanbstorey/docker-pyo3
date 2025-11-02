@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use crate::Pyo3Docker;
-use docker_api::opts::{ContainerConnectionOpts, NetworkPruneOpts};
+use docker_api::opts::{ContainerConnectionOpts, EndpointIpamConfig, NetworkPruneOpts};
 use docker_api::opts::{ContainerDisconnectionOpts, NetworkCreateOpts};
 use docker_api::{models::NetworkPrune200Response, Network, Networks};
 use pyo3::exceptions;
@@ -154,11 +154,10 @@ impl Pyo3Network {
         }
     }
 
-    #[pyo3(signature = (container_id, ipam_config=None, aliases=None, links=None, network_id=None, endpoint_id=None, gateway=None, ipv4=None, prefix_len=None, ipv6_gateway=None, ipv6=None, ipv6_prefix_len=None, mac=None, driver_opts=None))]
+    #[pyo3(signature = (container_id, aliases=None, links=None, network_id=None, endpoint_id=None, gateway=None, ipv4=None, prefix_len=None, ipv6_gateway=None, ipv6=None, ipv6_prefix_len=None, mac=None, driver_opts=None, ipam_config=None))]
     pub fn connect(
         &self,
         container_id: &str,
-        ipam_config: Option<&str>,
         aliases: Option<&Bound<'_, PyList>>,
         links: Option<&Bound<'_, PyList>>,
         network_id: Option<&str>,
@@ -171,6 +170,7 @@ impl Pyo3Network {
         ipv6_prefix_len: Option<i64>,
         mac: Option<&str>,
         driver_opts: Option<&Bound<'_, PyDict>>,
+        ipam_config: Option<&Bound<'_, PyDict>>,
     ) -> PyResult<()> {
         let mut connect_opts = ContainerConnectionOpts::builder(container_id);
 
@@ -215,7 +215,27 @@ impl Pyo3Network {
         bo_setter!(links, connect_opts);
         bo_setter!(driver_opts, connect_opts);
 
-        // bo_setter!(ipam_config, connect_opts);
+        // Handle ipam_config - expects dict with ipv4, ipv6, link_local_ips
+        if let Some(ipam_dict) = ipam_config {
+            let mut config = EndpointIpamConfig::new();
+
+            if let Some(ipv4_addr) = ipam_dict.get_item("ipv4")? {
+                let ipv4_str: String = ipv4_addr.extract()?;
+                config = config.ipv4(ipv4_str);
+            }
+
+            if let Some(ipv6_addr) = ipam_dict.get_item("ipv6")? {
+                let ipv6_str: String = ipv6_addr.extract()?;
+                config = config.ipv6(ipv6_str);
+            }
+
+            if let Some(link_local) = ipam_dict.get_item("link_local_ips")? {
+                let ips: Vec<String> = link_local.extract()?;
+                config = config.link_local_ips(ips);
+            }
+
+            connect_opts = connect_opts.ipam_config(config);
+        }
 
         let rv = __network_connect(&self.0, &connect_opts.build());
 

@@ -27,3 +27,22 @@ def test_volume_inspect(docker):
     v.inspect()
     assert isinstance(v, Volume)
     v.delete()
+
+def test_volume_with_labels(docker):
+    """we can create volumes with labels"""
+    labels = {"test": "label", "environment": "testing"}
+    docker.volumes().create(name="test_volume_labels", labels=labels)
+    v = docker.volumes().get("test_volume_labels")
+    info = v.inspect()
+    assert info["Labels"]["test"] == "label"
+    assert info["Labels"]["environment"] == "testing"
+    v.delete()
+
+def test_volume_with_driver_opts(docker):
+    """we can create volumes with driver options"""
+    driver_opts = {"type": "tmpfs", "device": "tmpfs"}
+    docker.volumes().create(name="test_volume_opts", driver="local", driver_opts=driver_opts)
+    v = docker.volumes().get("test_volume_opts")
+    info = v.inspect()
+    assert isinstance(info, dict)
+    v.delete()

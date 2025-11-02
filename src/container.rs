@@ -4,7 +4,7 @@ use docker_api::models::{
     ContainerInspect200Response, ContainerPrune200Response, ContainerSummary, ContainerWaitResponse,
 };
 use docker_api::opts::{
-    ContainerCreateOpts, ContainerListOpts, ContainerPruneOpts, ExecCreateOpts, LogsOpts,
+    ContainerCreateOpts, ContainerListOpts, ContainerPruneOpts, ExecCreateOpts, LogsOpts, PublishPort,
 };
 use docker_api::{Container, Containers};
 use futures_util::stream::StreamExt;
@@ -13,7 +13,7 @@ use pyo3::exceptions;
 use pyo3::prelude::*;
 use pyo3::types::{PyDateTime, PyDelta, PyDict, PyList};
 use pythonize::pythonize;
-use std::{fs::File, io::Read};
+use std::{collections::HashMap, fs::File, io::Read};
 use tar::Archive;
 
 use crate::Pyo3Docker;
@@ -122,6 +122,108 @@ impl Pyo3Containers {
             .as_ref()
             .map(|v| v.iter().map(|s| s.as_str()).collect());
 
+        let capabilities_strings: Option<Vec<String>> = if capabilities.is_some() {
+            capabilities.unwrap().extract().unwrap()
+        } else {
+            None
+        };
+        let capabilities: Option<Vec<&str>> = capabilities_strings
+            .as_ref()
+            .map(|v| v.iter().map(|s| s.as_str()).collect());
+
+        let command_strings: Option<Vec<String>> = if command.is_some() {
+            command.unwrap().extract().unwrap()
+        } else {
+            None
+        };
+        let command: Option<Vec<&str>> = command_strings
+            .as_ref()
+            .map(|v| v.iter().map(|s| s.as_str()).collect());
+
+        let entrypoint_strings: Option<Vec<String>> = if entrypoint.is_some() {
+            entrypoint.unwrap().extract().unwrap()
+        } else {
+            None
+        };
+        let entrypoint: Option<Vec<&str>> = entrypoint_strings
+            .as_ref()
+            .map(|v| v.iter().map(|s| s.as_str()).collect());
+
+        let env_strings: Option<Vec<String>> = if env.is_some() {
+            env.unwrap().extract().unwrap()
+        } else {
+            None
+        };
+        let env: Option<Vec<&str>> = env_strings
+            .as_ref()
+            .map(|v| v.iter().map(|s| s.as_str()).collect());
+
+        let extra_hosts_strings: Option<Vec<String>> = if extra_hosts.is_some() {
+            extra_hosts.unwrap().extract().unwrap()
+        } else {
+            None
+        };
+        let extra_hosts: Option<Vec<&str>> = extra_hosts_strings
+            .as_ref()
+            .map(|v| v.iter().map(|s| s.as_str()).collect());
+
+        let security_options_strings: Option<Vec<String>> = if security_options.is_some() {
+            security_options.unwrap().extract().unwrap()
+        } else {
+            None
+        };
+        let security_options: Option<Vec<&str>> = security_options_strings
+            .as_ref()
+            .map(|v| v.iter().map(|s| s.as_str()).collect());
+
+        let volumes_strings: Option<Vec<String>> = if volumes.is_some() {
+            volumes.unwrap().extract().unwrap()
+        } else {
+            None
+        };
+        let volumes: Option<Vec<&str>> = volumes_strings
+            .as_ref()
+            .map(|v| v.iter().map(|s| s.as_str()).collect());
+
+        let volumes_from_strings: Option<Vec<String>> = if volumes_from.is_some() {
+            volumes_from.unwrap().extract().unwrap()
+        } else {
+            None
+        };
+        let volumes_from: Option<Vec<&str>> = volumes_from_strings
+            .as_ref()
+            .map(|v| v.iter().map(|s| s.as_str()).collect());
+
+        let devices_vec: Option<Vec<HashMap<String, String>>> = if devices.is_some() {
+            let list = devices.unwrap();
+            let mut result = Vec::new();
+            for item in list.iter() {
+                let dict: HashMap<String, String> = item.extract().unwrap();
+                result.push(dict);
+            }
+            Some(result)
+        } else {
+            None
+        };
+        let devices = devices_vec;
+
+        let labels_map: Option<HashMap<String, String>> = if labels.is_some() {
+            Some(labels.unwrap().extract().unwrap())
+        } else {
+            None
+        };
+        let labels: Option<HashMap<&str, &str>> = labels_map
+            .as_ref()
+            .map(|m| m.iter().map(|(k, v)| (k.as_str(), v.as_str())).collect());
+
+        let stop_timeout_duration: Option<std::time::Duration> = stop_timeout.map(|st| {
+            st.extract::<chrono::Duration>()
+                .unwrap()
+                .to_std()
+                .unwrap()
+        });
+        let stop_timeout = stop_timeout_duration;
+
         bo_setter!(attach_stderr, create_opts);
         bo_setter!(attach_stdin, create_opts);
         bo_setter!(attach_stdout, create_opts);
@@ -142,25 +244,84 @@ impl Pyo3Containers {
         bo_setter!(userns_mode, create_opts);
         bo_setter!(working_dir, create_opts);
 
-        // this will suck
-
-        // bo_setter!(devices, create_opts);
-
+        bo_setter!(devices, create_opts);
         bo_setter!(links, create_opts);
+        bo_setter!(capabilities, create_opts);
+        bo_setter!(command, create_opts);
+        bo_setter!(entrypoint, create_opts);
+        bo_setter!(env, create_opts);
+        bo_setter!(extra_hosts, create_opts);
+        bo_setter!(security_options, create_opts);
+        bo_setter!(volumes, create_opts);
+        bo_setter!(volumes_from, create_opts);
 
-        // bo_setter!(publish_all_ports, create_opts);
-        // bo_setter!(restart_policy, create_opts);
-        // bo_setter!(security_options, create_opts);
-        // bo_setter!(stop_timeout, create_opts);
-        // bo_setter!(volumes, create_opts);
-        // bo_setter!(volumes_from, create_opts);
-        // bo_setter!(capabilities, create_opts);
-        // bo_setter!(command, create_opts);
-        // bo_setter!(entrypoint, create_opts);
-        // bo_setter!(env, create_opts);
+        bo_setter!(labels, create_opts);
+        bo_setter!(stop_timeout, create_opts);
+
+        // Handle expose - expects list of dicts like [{"srcport": 8080, "protocol": "tcp", "hostport": 8000}]
+        if let Some(expose_list) = expose {
+            for item in expose_list.iter() {
+                let port_dict: &Bound<'_, PyDict> = item.downcast()?;
+                let srcport: u32 = port_dict.get_item("srcport")?.expect("srcport required").extract()?;
+                let hostport: u32 = port_dict.get_item("hostport")?.expect("hostport required").extract()?;
+                let protocol: String = match port_dict.get_item("protocol")? {
+                    Some(p) => p.extract()?,
+                    None => "tcp".to_string(),
+                };
+
+                let publish_port = match protocol.as_str() {
+                    "tcp" => PublishPort::tcp(srcport),
+                    "udp" => PublishPort::udp(srcport),
+                    "sctp" => PublishPort::sctp(srcport),
+                    _ => return Err(exceptions::PyValueError::new_err(format!("unknown protocol: {}", protocol))),
+                };
+
+                create_opts = create_opts.expose(publish_port, hostport);
+            }
+        }
+
+        // Handle publish - expects list of dicts like [{"port": 8080, "protocol": "tcp"}]
+        if let Some(publish_list) = publish {
+            for item in publish_list.iter() {
+                let port_dict: &Bound<'_, PyDict> = item.downcast()?;
+                let port: u32 = port_dict.get_item("port")?.expect("port required").extract()?;
+                let protocol: String = match port_dict.get_item("protocol")? {
+                    Some(p) => p.extract()?,
+                    None => "tcp".to_string(),
+                };
+
+                let publish_port = match protocol.as_str() {
+                    "tcp" => PublishPort::tcp(port),
+                    "udp" => PublishPort::udp(port),
+                    "sctp" => PublishPort::sctp(port),
+                    _ => return Err(exceptions::PyValueError::new_err(format!("unknown protocol: {}", protocol))),
+                };
+
+                create_opts = create_opts.publish(publish_port);
+            }
+        }
+
+        if publish_all_ports.is_some() && publish_all_ports.unwrap() {
+            create_opts = create_opts.publish_all_ports();
+        }
+
+        if restart_policy.is_some() {
+            let policy_dict = restart_policy.unwrap();
+            let name = policy_dict.get_item("name")
+                .unwrap_or(None)
+                .expect("restart_policy requires 'name' key")
+                .extract::<String>()
+                .unwrap();
+            let max_retry = policy_dict.get_item("maximum_retry_count")
+                .unwrap_or(None)
+                .map(|v| v.extract::<u64>().unwrap())
+                .unwrap_or(0);
+
+            create_opts = create_opts.restart_policy(&name, max_retry);
+        }
+
         // bo_setter!(expose, create_opts);
-        // bo_setter!(extra_hosts, create_opts);
-        // bo_setter!(labels, create_opts);
+        // bo_setter!(publish, create_opts);
 
         let rv = __containers_create(&self.0, &create_opts.build());
         match rv {
@@ -367,8 +528,8 @@ impl Pyo3Container {
         env: Option<&Bound<'_, PyList>>,
         attach_stdout: Option<bool>,
         attach_stderr: Option<bool>,
-        // detach_keys: Option<&str>,
-        // tty: Option<bool>,
+        detach_keys: Option<&str>,
+        tty: Option<bool>,
         privileged: Option<bool>,
         user: Option<&str>,
         working_dir: Option<&str>,
@@ -385,8 +546,8 @@ impl Pyo3Container {
 
         bo_setter!(attach_stdout, exec_opts);
         bo_setter!(attach_stderr, exec_opts);
-        // bo_setter!(tty, exec_opts);
-        // bo_setter!(detach_keys,exec_opts);
+        bo_setter!(tty, exec_opts);
+        bo_setter!(detach_keys, exec_opts);
         bo_setter!(privileged, exec_opts);
         bo_setter!(user, exec_opts);
         bo_setter!(working_dir, exec_opts);

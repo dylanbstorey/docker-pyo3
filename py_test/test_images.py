@@ -54,6 +54,27 @@ def test_images_build(docker):
         os.unlink(path)
         docker.images().get('test-image').delete()
 
+def test_images_build_with_labels(docker):
+    """we can build images with labels"""
+    path = os.path.join(here,'Dockerfile')
+
+    with open(path,'w') as f:
+        print("FROM busybox",file=f)
+        print("COPY conftest.py /", file=f)
+
+    labels = {"version": "1.0", "environment": "test"}
+    try:
+        x = docker.images().build(path=here, dockerfile='Dockerfile', tag='test-image-labels', labels=labels)
+        image = docker.images().get('test-image-labels')
+        info = image.inspect()
+        assert info["Config"]["Labels"]["version"] == "1.0"
+        assert info["Config"]["Labels"]["environment"] == "test"
+    except Exception as e:
+        raise(e)
+    finally:
+        os.unlink(path)
+        docker.images().get('test-image-labels').delete()
+
 def test_images_get(image_pull, docker):
     """we can get and inspect images by Id and name"""
     x = docker.images().list();

@@ -16,13 +16,16 @@ def run_tests():
         # Build the wheel with maturin using venv's python
         subprocess.run([venv.python_executable, "-m", "maturin", "build"], check=True)
 
-        # Find the built wheel
+        # Find the built wheel - sort by modification time to get the latest
         wheels = glob.glob("target/wheels/docker_pyo3-*.whl")
         if not wheels:
             raise RuntimeError("No wheel file found after build")
 
+        # Sort by modification time, newest first
+        latest_wheel = sorted(wheels, key=os.path.getmtime, reverse=True)[0]
+
         # Install the built wheel directly (force reinstall to get latest build)
-        subprocess.run([venv.python_executable, "-m", "pip", "install", "--force-reinstall", wheels[0]], check=True)
+        subprocess.run([venv.python_executable, "-m", "pip", "install", "--force-reinstall", latest_wheel], check=True)
 
         # Run pytest using venv's python
         pytest_rv = subprocess.run([venv.python_executable, "-m", "pytest", "-svv"])

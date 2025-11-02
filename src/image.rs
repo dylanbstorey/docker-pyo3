@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::fs::OpenOptions;
 
 use crate::Pyo3Docker;
@@ -6,7 +7,8 @@ use docker_api::models::{
     ImageSummary,
 };
 use docker_api::opts::{
-    ImageBuildOpts, ImageListOpts, ImagePushOpts, PullOpts, RegistryAuth, TagOpts,
+    ImageBuildOpts, ImageFilter, ImageListOpts, ImageName, ImagePushOpts, PullOpts, RegistryAuth,
+    TagOpts,
 };
 
 use docker_api::{Image, Images};
@@ -48,11 +50,53 @@ impl Pyo3Images {
         &self,
         all: Option<bool>,
         digests: Option<bool>,
-        filter: Option<&str>,
+        filter: Option<&Bound<'_, PyDict>>,
     ) -> PyResult<Py<PyAny>> {
         let mut opts = ImageListOpts::builder();
         bo_setter!(all, opts);
         bo_setter!(digests, opts);
+
+        // Handle filter parameter - expects dict like {"type": "dangling", "value": true}
+        // or {"type": "label", "key": "foo", "value": "bar"}
+        if let Some(filter_dict) = filter {
+            if let Some(filter_type) = filter_dict.get_item("type")? {
+                let filter_type_str: String = filter_type.extract()?;
+
+                let image_filter = match filter_type_str.as_str() {
+                    "dangling" => ImageFilter::Dangling,
+                    "label" => {
+                        if let Some(value) = filter_dict.get_item("value")? {
+                            if let Some(key) = filter_dict.get_item("key")? {
+                                ImageFilter::Label(key.extract()?, value.extract()?)
+                            } else {
+                                ImageFilter::LabelKey(value.extract()?)
+                            }
+                        } else {
+                            return Err(exceptions::PyValueError::new_err("label filter requires 'value' (and optionally 'key')"));
+                        }
+                    },
+                    "before" => {
+                        if let Some(value) = filter_dict.get_item("value")? {
+                            let image_str: String = value.extract()?;
+                            ImageFilter::Before(ImageName::tag(image_str, None::<String>))
+                        } else {
+                            return Err(exceptions::PyValueError::new_err("before filter requires 'value'"));
+                        }
+                    },
+                    "since" => {
+                        if let Some(value) = filter_dict.get_item("value")? {
+                            let image_str: String = value.extract()?;
+                            ImageFilter::Since(ImageName::tag(image_str, None::<String>))
+                        } else {
+                            return Err(exceptions::PyValueError::new_err("since filter requires 'value'"));
+                        }
+                    },
+                    _ => return Err(exceptions::PyValueError::new_err(format!("unknown filter type: {}", filter_type_str))),
+                };
+
+                opts = opts.filter([image_filter]);
+            }
+        }
 
         let rv = __images_list(&self.0, &opts.build());
 
@@ -119,6 +163,17 @@ impl Pyo3Images {
         bo_setter!(platform, bo);
         bo_setter!(target, bo);
         bo_setter!(outputs, bo);
+
+        let labels_map: Option<HashMap<String, String>> = if labels.is_some() {
+            Some(labels.unwrap().extract().unwrap())
+        } else {
+            None
+        };
+        let labels: Option<HashMap<&str, &str>> = labels_map
+            .as_ref()
+            .map(|m| m.iter().map(|(k, v)| (k.as_str(), v.as_str())).collect());
+
+        bo_setter!(labels, bo);
 
         let rv = __images_build(&self.0, &bo.build());
 

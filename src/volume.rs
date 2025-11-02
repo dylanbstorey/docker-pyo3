@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use docker_api::{
     models::VolumeList200Response,
     models::VolumePrune200Response,
@@ -64,10 +66,29 @@ impl Pyo3Volumes {
         labels: Option<&Bound<'_, PyDict>>,
     ) -> PyResult<Py<PyAny>> {
         let mut opts = VolumeCreateOpts::builder();
+
+        let driver_opts_map: Option<HashMap<String, String>> = if driver_opts.is_some() {
+            Some(driver_opts.unwrap().extract().unwrap())
+        } else {
+            None
+        };
+        let driver_opts: Option<HashMap<&str, &str>> = driver_opts_map
+            .as_ref()
+            .map(|m| m.iter().map(|(k, v)| (k.as_str(), v.as_str())).collect());
+
+        let labels_map: Option<HashMap<String, String>> = if labels.is_some() {
+            Some(labels.unwrap().extract().unwrap())
+        } else {
+            None
+        };
+        let labels: Option<HashMap<&str, &str>> = labels_map
+            .as_ref()
+            .map(|m| m.iter().map(|(k, v)| (k.as_str(), v.as_str())).collect());
+
         bo_setter!(name, opts);
         bo_setter!(driver, opts);
-        // bo_setter!(driver_opts, opts);
-        // bo_setter!(labels, opts);
+        bo_setter!(driver_opts, opts);
+        bo_setter!(labels, opts);
 
         let rv = __volumes_create(&self.0, &opts.build());
 
