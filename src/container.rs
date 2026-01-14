@@ -337,7 +337,7 @@ impl Pyo3Containers {
         // Handle expose - expects list of dicts like [{"srcport": 8080, "protocol": "tcp", "hostport": 8000}]
         if let Some(expose_list) = expose {
             for item in expose_list.iter() {
-                let port_dict: &Bound<'_, PyDict> = item.downcast()?;
+                let port_dict: &Bound<'_, PyDict> = item.cast()?;
                 let srcport: u32 = port_dict
                     .get_item("srcport")?
                     .expect("srcport required")
@@ -370,7 +370,7 @@ impl Pyo3Containers {
         // Handle publish - expects list of dicts like [{"port": 8080, "protocol": "tcp"}]
         if let Some(publish_list) = publish {
             for item in publish_list.iter() {
-                let port_dict: &Bound<'_, PyDict> = item.downcast()?;
+                let port_dict: &Bound<'_, PyDict> = item.cast()?;
                 let port: u32 = port_dict
                     .get_item("port")?
                     .expect("port required")
