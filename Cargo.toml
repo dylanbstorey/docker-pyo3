@@ -1,6 +1,6 @@
 [package]
 name = "docker-pyo3"
-version = "0.2.1"
+version = "0.3.0"
 edition = "2021"
 description = "Python bindings to the docker-api-rs crate"
 license = "GPL-3.0-only"
@@ -16,9 +16,11 @@ crate-type = ["cdylib","rlib"]
 [dependencies]
 pyo3 = { version = ">=0.26", features = ["chrono", "extension-module"] }
 chrono = { version = "0.4"}
-docker-api = { version = "0.12.2", features = ["swarm"]}
+docker-api = { version = "0.14.0", features = ["swarm"]}
 tokio = { version="1", features=["macros", "rt-multi-thread"] }
 serde = { version="1", features=["derive"] }
+serde_json = { version = "1" }
+serde_yaml = { version = "0.9" }
 pythonize = { version =">=0.21" }
 futures-util = {version="0.3.26"}
 tar = {version="0.4.35"}

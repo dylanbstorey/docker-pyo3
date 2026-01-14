@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use docker_api::{
-    models::VolumeList200Response,
+    models::VolumeListResponse,
     models::VolumePrune200Response,
     opts::{VolumeCreateOpts, VolumeListOpts, VolumePruneOpts},
     Volume, Volumes,
@@ -138,7 +138,7 @@ async fn __volumes_prune(
 async fn __volumes_list(
     volumes: &Volumes,
     opts: &VolumeListOpts,
-) -> Result<VolumeList200Response, docker_api::Error> {
+) -> Result<VolumeListResponse, docker_api::Error> {
     volumes.list(opts).await
 }
 

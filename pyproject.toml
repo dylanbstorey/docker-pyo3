@@ -15,3 +15,8 @@ classifiers = [
 [tool.maturin]
 features = ["pyo3/extension-module"]
 cargo-extra-args = ["--features", "extension-module"]
+
+[dependency-groups]
+dev = [
+    "pytest-cov>=7.0.0",
+]

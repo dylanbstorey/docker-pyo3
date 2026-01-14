@@ -1,13 +1,14 @@
 use chrono::{DateTime, Utc};
 use docker_api::conn::TtyChunk;
 use docker_api::models::{
-    ContainerInspect200Response, ContainerPrune200Response, ContainerSummary, ContainerWaitResponse,
+    ContainerChanges200Response, ContainerInspect200Response, ContainerPrune200Response,
+    ContainerSummary, ContainerTop200Response, ContainerWaitResponse,
 };
 use docker_api::opts::{
-    ContainerCreateOpts, ContainerListOpts, ContainerPruneOpts, ExecCreateOpts, LogsOpts,
-    PublishPort,
+    ContainerCommitOpts, ContainerCreateOpts, ContainerListOpts, ContainerPruneOpts,
+    ContainerRestartOpts, ContainerStopOpts, ExecCreateOpts, ExecStartOpts, LogsOpts, PublishPort,
 };
-use docker_api::{Container, Containers};
+use docker_api::{Container, Containers, Exec};
 use futures_util::stream::StreamExt;
 use futures_util::TryStreamExt;
 use pyo3::exceptions;
@@ -29,18 +30,27 @@ pub fn container(_py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
 /// Interface for managing Docker containers collection.
 #[derive(Debug)]
 #[pyclass(name = "Containers")]
-pub struct Pyo3Containers(pub Containers);
+pub struct Pyo3Containers {
+    containers: Containers,
+    docker: docker_api::Docker,
+}
 
 /// Represents an individual Docker container.
 #[derive(Debug)]
 #[pyclass(name = "Container")]
-pub struct Pyo3Container(pub Container);
+pub struct Pyo3Container {
+    container: Container,
+    docker: docker_api::Docker,
+}
 
 #[pymethods]
 impl Pyo3Containers {
     #[new]
     pub fn new(docker: Pyo3Docker) -> Self {
-        Pyo3Containers(Containers::new(docker.0))
+        Pyo3Containers {
+            containers: Containers::new(docker.0.clone()),
+            docker: docker.0,
+        }
     }
 
     /// Get a specific container by ID or name.
@@ -51,7 +61,10 @@ impl Pyo3Containers {
     /// Returns:
     ///     Container: Container instance
     fn get(&self, id: &str) -> Pyo3Container {
-        Pyo3Container(self.0.get(id))
+        Pyo3Container {
+            container: self.containers.get(id),
+            docker: self.docker.clone(),
+        }
     }
 
     /// List containers.
@@ -79,7 +92,7 @@ impl Pyo3Containers {
         bo_setter!(before, builder);
         bo_setter!(sized, builder);
 
-        let cs = __containers_list(&self.0, &builder.build());
+        let cs = __containers_list(&self.containers, &builder.build());
         pythonize_this!(cs)
     }
 
@@ -88,7 +101,7 @@ impl Pyo3Containers {
     /// Returns:
     ///     dict: Prune results including containers deleted and space reclaimed
     fn prune(&self) -> PyResult<Py<PyAny>> {
-        let rv = __containers_prune(&self.0, &Default::default());
+        let rv = __containers_prune(&self.containers, &Default::default());
 
         match rv {
             Ok(rv) => Ok(pythonize_this!(rv)),
@@ -407,9 +420,12 @@ impl Pyo3Containers {
         // bo_setter!(expose, create_opts);
         // bo_setter!(publish, create_opts);
 
-        let rv = __containers_create(&self.0, &create_opts.build());
+        let rv = __containers_create(&self.containers, &create_opts.build());
         match rv {
-            Ok(rv) => Ok(Pyo3Container(rv)),
+            Ok(container) => Ok(Pyo3Container {
+                container,
+                docker: self.docker.clone(),
+            }),
             Err(rv) => Err(py_sys_exception!(rv)),
         }
     }
@@ -444,7 +460,10 @@ async fn __containers_create(
 impl Pyo3Container {
     #[new]
     fn new(docker: Pyo3Docker, id: String) -> Self {
-        Pyo3Container(Container::new(docker.0, id))
+        Pyo3Container {
+            container: Container::new(docker.0.clone(), id),
+            docker: docker.0,
+        }
     }
 
     /// Get the container ID.
@@ -452,7 +471,7 @@ impl Pyo3Container {
     /// Returns:
     ///     str: Container ID
     fn id(&self) -> String {
-        self.0.id().to_string()
+        self.container.id().to_string()
     }
 
     /// Inspect the container to get detailed information.
@@ -460,7 +479,7 @@ impl Pyo3Container {
     /// Returns:
     ///     dict: Detailed container information including config, state, mounts, etc.
     fn inspect(&self) -> PyResult<Py<PyAny>> {
-        let ci = __container_inspect(&self.0);
+        let ci = __container_inspect(&self.container);
         Ok(pythonize_this!(ci))
     }
 
@@ -503,7 +522,7 @@ impl Pyo3Container {
             log_opts = log_opts.since(&rs_since);
         }
 
-        __container_logs(&self.0, &log_opts.build())
+        __container_logs(&self.container, &log_opts.build())
     }
 
     /// Remove the container (not implemented yet).
@@ -521,7 +540,7 @@ impl Pyo3Container {
     /// Raises:
     ///     SystemError: If the container cannot be deleted
     fn delete(&self) -> PyResult<()> {
-        let rv = __container_delete(&self.0);
+        let rv = __container_delete(&self.container);
         if rv.is_ok() {
             Ok(())
         } else {
@@ -553,7 +572,7 @@ impl Pyo3Container {
     /// Raises:
     ///     SystemError: If the container cannot be started
     fn start(&self) -> PyResult<()> {
-        let rv = __container_start(&self.0);
+        let rv = __container_start(&self.container);
 
         match rv {
             Ok(_rv) => Ok(()),
@@ -581,7 +600,7 @@ impl Pyo3Container {
                 .unwrap()
         });
 
-        let rv = __container_stop(&self.0, wait);
+        let rv = __container_stop(&self.container, wait);
         match rv {
             Ok(_rv) => Ok(()),
             Err(_rv) => Err(exceptions::PySystemError::new_err(
@@ -608,7 +627,7 @@ impl Pyo3Container {
                 .unwrap()
         });
 
-        let rv = __container_restart(&self.0, wait);
+        let rv = __container_restart(&self.container, wait);
         match rv {
             Ok(_rv) => Ok(()),
             Err(_rv) => Err(exceptions::PySystemError::new_err(
@@ -628,7 +647,7 @@ impl Pyo3Container {
     /// Raises:
     ///     SystemError: If the container cannot be killed
     fn kill(&self, signal: Option<&str>) -> PyResult<()> {
-        let rv = __container_kill(&self.0, signal);
+        let rv = __container_kill(&self.container, signal);
         match rv {
             Ok(_rv) => Ok(()),
             Err(_rv) => Err(exceptions::PySystemError::new_err(
@@ -648,7 +667,7 @@ impl Pyo3Container {
     /// Raises:
     ///     SystemError: If the container cannot be renamed
     fn rename(&self, name: &str) -> PyResult<()> {
-        let rv = __container_rename(&self.0, name);
+        let rv = __container_rename(&self.container, name);
         match rv {
             Ok(_rv) => Ok(()),
             Err(_rv) => Err(exceptions::PySystemError::new_err(
@@ -665,7 +684,7 @@ impl Pyo3Container {
     /// Raises:
     ///     SystemError: If the container cannot be paused
     fn pause(&self) -> PyResult<()> {
-        let rv = __container_pause(&self.0);
+        let rv = __container_pause(&self.container);
         match rv {
             Ok(_rv) => Ok(()),
             Err(_rv) => Err(exceptions::PySystemError::new_err(
@@ -682,7 +701,7 @@ impl Pyo3Container {
     /// Raises:
     ///     SystemError: If the container cannot be unpaused
     fn unpause(&self) -> PyResult<()> {
-        let rv = __container_unpause(&self.0);
+        let rv = __container_unpause(&self.container);
         match rv {
             Ok(_rv) => Ok(()),
             Err(_rv) => Err(exceptions::PySystemError::new_err(
@@ -696,8 +715,109 @@ impl Pyo3Container {
     /// Returns:
     ///     dict: Wait response including status code
     fn wait(&self) -> Py<PyAny> {
-        let rv = __container_wait(&self.0).unwrap();
+        let rv = __container_wait(&self.container).unwrap();
         pythonize_this!(rv)
+    }
+
+    /// Get container resource usage statistics.
+    ///
+    /// Args:
+    ///     stream: If True, continuously stream stats. If False (default), return single snapshot.
+    ///
+    /// Returns:
+    ///     dict: Container statistics including CPU, memory, network, and I/O usage.
+    ///           If stream=True, returns a list of stats snapshots.
+    ///
+    /// Raises:
+    ///     SystemError: If stats cannot be retrieved
+    #[pyo3(signature = (stream=None))]
+    fn stats(&self, stream: Option<bool>) -> PyResult<Py<PyAny>> {
+        let stream = stream.unwrap_or(false);
+        let rv = __container_stats(&self.container, stream);
+        match rv {
+            Ok(rv) => Ok(pythonize_this!(rv)),
+            Err(rv) => Err(py_sys_exception!(rv)),
+        }
+    }
+
+    /// Attach to the container's standard streams.
+    ///
+    /// This method attaches to the container and collects output from stdout/stderr.
+    /// It's designed for short-lived connections to collect output.
+    ///
+    /// Returns:
+    ///     str: Combined stdout and stderr output from the container
+    ///
+    /// Raises:
+    ///     SystemError: If attach fails
+    fn attach(&self) -> PyResult<String> {
+        let rv = __container_attach(&self.container);
+        match rv {
+            Ok(rv) => Ok(rv),
+            Err(rv) => Err(py_sys_exception!(rv)),
+        }
+    }
+
+    /// Get filesystem changes made to the container.
+    ///
+    /// Returns a list of changes made to the container's filesystem.
+    /// Each change includes the path and kind of change (Added, Modified, Deleted).
+    ///
+    /// Returns:
+    ///     list[dict] | None: List of filesystem changes, or None if no changes
+    ///
+    /// Raises:
+    ///     SystemError: If changes cannot be retrieved
+    fn changes(&self) -> PyResult<Py<PyAny>> {
+        let rv = __container_changes(&self.container);
+        match rv {
+            Ok(rv) => Ok(pythonize_this!(rv)),
+            Err(rv) => Err(py_sys_exception!(rv)),
+        }
+    }
+
+    /// Export the container as a tarball.
+    ///
+    /// Args:
+    ///     path: Local path to save the exported tarball
+    ///
+    /// Returns:
+    ///     None
+    ///
+    /// Raises:
+    ///     SystemError: If export fails
+    fn export(&self, path: &str) -> PyResult<()> {
+        let rv = __container_export(&self.container);
+        match rv {
+            Ok(bytes) => {
+                use std::io::Write;
+                let mut file = File::create(path)
+                    .map_err(|e| exceptions::PySystemError::new_err(format!("{e}")))?;
+                file.write_all(&bytes)
+                    .map_err(|e| exceptions::PySystemError::new_err(format!("{e}")))?;
+                Ok(())
+            }
+            Err(rv) => Err(py_sys_exception!(rv)),
+        }
+    }
+
+    /// Get running processes in the container.
+    ///
+    /// Args:
+    ///     ps_args: Arguments to pass to ps command (e.g., "aux", "-ef")
+    ///
+    /// Returns:
+    ///     dict: Process information including titles and process list
+    ///
+    /// Raises:
+    ///     SystemError: If top cannot be executed (Unix only)
+    #[pyo3(signature = (ps_args=None))]
+    fn top(&self, ps_args: Option<&str>) -> PyResult<Py<PyAny>> {
+        let rv = __container_top(&self.container, ps_args);
+        match rv {
+            Ok(rv) => Ok(pythonize_this!(rv)),
+            Err(rv) => Err(py_sys_exception!(rv)),
+        }
     }
 
     /// Execute a command in the running container.
@@ -748,7 +868,7 @@ impl Pyo3Container {
         bo_setter!(user, exec_opts);
         bo_setter!(working_dir, exec_opts);
 
-        let rv = __container_exec(&self.0, exec_opts.build());
+        let rv = __container_exec(&self.container, exec_opts.build());
         let rv = rv.unwrap();
         match rv {
             Ok(_rv) => Ok(()),
@@ -758,8 +878,77 @@ impl Pyo3Container {
         }
     }
 
+    /// Create an exec instance without starting it.
+    ///
+    /// Use this when you need to inspect or resize the exec session before or during execution.
+    /// Returns the exec ID which can be used to create an Exec object.
+    ///
+    /// Args:
+    ///     command: Command to execute as list (e.g., ["/bin/sh", "-c", "ls"])
+    ///     env: Environment variables as list (e.g., ["VAR=value"])
+    ///     attach_stdout: Attach to stdout
+    ///     attach_stderr: Attach to stderr
+    ///     detach_keys: Override key sequence for detaching
+    ///     tty: Allocate a pseudo-TTY (required for resize)
+    ///     privileged: Run with extended privileges
+    ///     user: Username or UID
+    ///     working_dir: Working directory for the exec session
+    ///
+    /// Returns:
+    ///     str: Exec instance ID (use with Exec(docker, id) to get the exec object)
+    ///
+    /// Raises:
+    ///     SystemError: If the exec cannot be created
+    ///
+    /// Example:
+    ///     >>> exec_id = container.exec_create(["/bin/bash"], tty=True)
+    ///     >>> exec_obj = Exec(docker, exec_id)
+    ///     >>> exec_obj.resize(80, 24)
+    ///     >>> exec_obj.inspect()
+    #[pyo3(signature = (command, env=None, attach_stdout=None, attach_stderr=None, detach_keys=None, tty=None, privileged=None, user=None, working_dir=None))]
+    fn exec_create(
+        &self,
+        command: &Bound<'_, PyList>,
+        env: Option<&Bound<'_, PyList>>,
+        attach_stdout: Option<bool>,
+        attach_stderr: Option<bool>,
+        detach_keys: Option<&str>,
+        tty: Option<bool>,
+        privileged: Option<bool>,
+        user: Option<&str>,
+        working_dir: Option<&str>,
+    ) -> PyResult<String> {
+        let command_strings: Vec<String> = command.extract().unwrap();
+        let command: Vec<&str> = command_strings.iter().map(|s| s.as_str()).collect();
+        let mut exec_opts = ExecCreateOpts::builder().command(command);
+
+        if env.is_some() {
+            let env_strings: Vec<String> = env.unwrap().extract().unwrap();
+            let env: Vec<&str> = env_strings.iter().map(|s| s.as_str()).collect();
+            exec_opts = exec_opts.env(env);
+        }
+
+        bo_setter!(attach_stdout, exec_opts);
+        bo_setter!(attach_stderr, exec_opts);
+        bo_setter!(tty, exec_opts);
+        bo_setter!(detach_keys, exec_opts);
+        bo_setter!(privileged, exec_opts);
+        bo_setter!(user, exec_opts);
+        bo_setter!(working_dir, exec_opts);
+
+        let rv = __container_exec_create(
+            self.docker.clone(),
+            self.container.id().as_ref(),
+            exec_opts.build(),
+        );
+        match rv {
+            Ok(exec_id) => Ok(exec_id),
+            Err(rv) => Err(py_sys_exception!(rv)),
+        }
+    }
+
     fn copy_from(&self, src: &str, dst: &str) -> PyResult<()> {
-        let rv = __container_copy_from(&self.0, src);
+        let rv = __container_copy_from(&self.container, src);
 
         match rv {
             Ok(rv) => {
@@ -780,7 +969,7 @@ impl Pyo3Container {
         file.read_to_end(&mut bytes)
             .expect("Cannot read file on the localhost.");
 
-        let rv = __container_copy_file_into(&self.0, dst, &bytes);
+        let rv = __container_copy_file_into(&self.container, dst, &bytes);
 
         match rv {
             Ok(_rv) => Ok(()),
@@ -789,18 +978,53 @@ impl Pyo3Container {
     }
 
     fn stat_file(&self, path: &str) -> Py<PyAny> {
-        let rv = __container_stat_file(&self.0, path).unwrap();
+        let rv = __container_stat_file(&self.container, path).unwrap();
         pythonize_this!(rv)
     }
 
-    fn commit(&self) -> PyResult<()> {
-        Err(exceptions::PyNotImplementedError::new_err(
-            "This method is not available yet.",
-        ))
+    /// Create a new image from the container.
+    ///
+    /// Args:
+    ///     repo: Repository name for the new image (e.g., "myimage")
+    ///     tag: Tag for the new image (e.g., "v1.0")
+    ///     comment: Commit message
+    ///     author: Author of the commit (e.g., "John Doe <john@example.com>")
+    ///     pause: Pause the container during commit
+    ///     changes: Dockerfile instruction to apply (e.g., "CMD /bin/bash")
+    ///
+    /// Returns:
+    ///     str: ID of the created image
+    ///
+    /// Raises:
+    ///     SystemError: If commit fails
+    #[pyo3(signature = (repo=None, tag=None, comment=None, author=None, pause=None, changes=None))]
+    fn commit(
+        &self,
+        repo: Option<&str>,
+        tag: Option<&str>,
+        comment: Option<&str>,
+        author: Option<&str>,
+        pause: Option<bool>,
+        changes: Option<&str>,
+    ) -> PyResult<String> {
+        let mut opts = ContainerCommitOpts::builder();
+
+        bo_setter!(repo, opts);
+        bo_setter!(tag, opts);
+        bo_setter!(comment, opts);
+        bo_setter!(author, opts);
+        bo_setter!(pause, opts);
+        bo_setter!(changes, opts);
+
+        let rv = __container_commit(&self.container, &opts.build());
+        match rv {
+            Ok(rv) => Ok(rv),
+            Err(rv) => Err(py_sys_exception!(rv)),
+        }
     }
 
     fn __repr__(&self) -> String {
-        let inspect = __container_inspect(&self.0);
+        let inspect = __container_inspect(&self.container);
         format!(
             "Container(id: {}, name: {}, status: {})",
             inspect.id.unwrap(),
@@ -856,7 +1080,11 @@ async fn __container_stop(
     container: &Container,
     wait: Option<std::time::Duration>,
 ) -> Result<(), docker_api::Error> {
-    container.stop(wait).await
+    let mut opts = ContainerStopOpts::builder();
+    if let Some(w) = wait {
+        opts = opts.wait(w);
+    }
+    container.stop(&opts.build()).await
 }
 
 #[tokio::main]
@@ -864,7 +1092,11 @@ async fn __container_restart(
     container: &Container,
     wait: Option<std::time::Duration>,
 ) -> Result<(), docker_api::Error> {
-    container.restart(wait).await
+    let mut opts = ContainerRestartOpts::builder();
+    if let Some(w) = wait {
+        opts = opts.wait(w);
+    }
+    container.restart(&opts.build()).await
 }
 
 #[tokio::main]
@@ -898,11 +1130,104 @@ async fn __container_wait(
 }
 
 #[tokio::main]
+async fn __container_stats(
+    container: &Container,
+    stream: bool,
+) -> Result<serde_json::Value, docker_api::Error> {
+    let mut stats_stream = container.stats();
+
+    if stream {
+        // Collect multiple stats snapshots (limit to avoid infinite stream)
+        let mut stats_vec: Vec<serde_json::Value> = Vec::new();
+        let mut count = 0;
+        while let Some(stat_result) = stats_stream.next().await {
+            match stat_result {
+                Ok(stat) => {
+                    stats_vec.push(stat);
+                    count += 1;
+                    if count >= 10 {
+                        // Limit to 10 snapshots for streaming mode
+                        break;
+                    }
+                }
+                Err(e) => return Err(e),
+            }
+        }
+        Ok(serde_json::Value::Array(stats_vec))
+    } else {
+        // Return single snapshot
+        match stats_stream.next().await {
+            Some(Ok(stat)) => Ok(stat),
+            Some(Err(e)) => Err(e),
+            None => Ok(serde_json::Value::Null),
+        }
+    }
+}
+
+#[tokio::main]
+async fn __container_attach(container: &Container) -> Result<String, docker_api::Error> {
+    use futures_util::StreamExt;
+
+    let mut multiplexer = container.attach().await?;
+    let mut output = Vec::new();
+
+    // Collect output chunks with a timeout/limit to avoid hanging
+    let mut count = 0;
+    while let Some(chunk_result) = multiplexer.next().await {
+        match chunk_result {
+            Ok(chunk) => {
+                output.extend_from_slice(&chunk.to_vec());
+                count += 1;
+                if count >= 100 {
+                    // Limit chunks to avoid infinite streaming
+                    break;
+                }
+            }
+            Err(_) => break,
+        }
+    }
+
+    Ok(String::from_utf8_lossy(&output).to_string())
+}
+
+#[tokio::main]
+async fn __container_changes(
+    container: &Container,
+) -> Result<Option<ContainerChanges200Response>, docker_api::Error> {
+    container.changes().await
+}
+
+#[tokio::main]
+async fn __container_export(container: &Container) -> Result<Vec<u8>, docker_api::Error> {
+    container.export().try_concat().await
+}
+
+#[tokio::main]
+async fn __container_top(
+    container: &Container,
+    ps_args: Option<&str>,
+) -> Result<ContainerTop200Response, docker_api::Error> {
+    container.top(ps_args).await
+}
+
+#[tokio::main]
+async fn __container_commit(
+    container: &Container,
+    opts: &ContainerCommitOpts,
+) -> Result<String, docker_api::Error> {
+    container.commit(opts, None).await
+}
+
+#[tokio::main]
 async fn __container_exec(
     container: &Container,
     exec_opts: ExecCreateOpts,
 ) -> Option<Result<TtyChunk, docker_api::conn::Error>> {
-    container.exec(&exec_opts).next().await
+    let start_opts = ExecStartOpts::builder().build();
+    match container.exec(&exec_opts, &start_opts).await {
+        Ok(mut multiplexer) => multiplexer.next().await,
+        Err(_) => None,
+    }
 }
 
 #[tokio::main]
@@ -928,4 +1253,17 @@ async fn __container_stat_file(
     src: &str,
 ) -> Result<String, docker_api::Error> {
     container.stat_file(src).await
+}
+
+#[tokio::main]
+async fn __container_exec_create(
+    docker: docker_api::Docker,
+    container_id: &str,
+    exec_opts: ExecCreateOpts,
+) -> Result<String, docker_api::Error> {
+    // Create the exec instance
+    let exec = Exec::create(docker, container_id, &exec_opts).await?;
+    // Inspect to get the ID (the only reliable way to get the ID from the Exec struct)
+    let inspect = exec.inspect().await?;
+    Ok(inspect.id.unwrap_or_default())
 }

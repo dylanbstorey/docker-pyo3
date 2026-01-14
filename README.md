@@ -138,6 +138,60 @@ Get the Volumes interface for managing volumes.
 volumes = docker.volumes()
 ```
 
+##### `nodes()`
+Get the Nodes interface for managing Swarm nodes.
+
+**Returns:** `Nodes` - Interface for node operations (requires Swarm mode)
+
+```python
+nodes = docker.nodes()
+```
+
+##### `services()`
+Get the Services interface for managing Swarm services.
+
+**Returns:** `Services` - Interface for service operations (requires Swarm mode)
+
+```python
+services = docker.services()
+```
+
+##### `tasks()`
+Get the Tasks interface for managing Swarm tasks.
+
+**Returns:** `Tasks` - Interface for task operations (requires Swarm mode)
+
+```python
+tasks = docker.tasks()
+```
+
+##### `secrets()`
+Get the Secrets interface for managing Swarm secrets.
+
+**Returns:** `Secrets` - Interface for secret operations (requires Swarm mode)
+
+```python
+secrets = docker.secrets()
+```
+
+##### `configs()`
+Get the Configs interface for managing Swarm configs.
+
+**Returns:** `Configs` - Interface for config operations (requires Swarm mode)
+
+```python
+configs = docker.configs()
+```
+
+##### `plugins()`
+Get the Plugins interface for managing Docker plugins.
+
+**Returns:** `Plugins` - Interface for plugin operations
+
+```python
+plugins = docker.plugins()
+```
+
 ---
 
 ### Containers
@@ -955,6 +1009,649 @@ Delete the volume.
 ```python
 volume.delete()
 ```
+
+---
+
+### Docker Compose
+
+The compose module provides Docker Compose-like functionality for managing multi-container applications.
+
+#### Parsing Compose Files
+
+##### `parse_compose_file(path)`
+Parse a Docker Compose file.
+
+**Parameters:**
+- `path` (str): Path to the compose file (docker-compose.yml)
+
+**Returns:** `ComposeFile` - Parsed compose file instance
+
+```python
+from docker_pyo3.compose import parse_compose_file
+
+compose = parse_compose_file("/path/to/docker-compose.yml")
+```
+
+##### `parse_compose_string(content)`
+Parse Docker Compose content from a string.
+
+**Parameters:**
+- `content` (str): YAML content of the compose file
+
+**Returns:** `ComposeFile` - Parsed compose file instance
+
+```python
+from docker_pyo3.compose import parse_compose_string
+
+compose_content = """
+version: '3.8'
+services:
+  web:
+    image: nginx
+    ports:
+      - "8080:80"
+  db:
+    image: postgres
+    environment:
+      POSTGRES_PASSWORD: secret
+"""
+compose = parse_compose_string(compose_content)
+```
+
+#### ComposeFile
+
+Represents a parsed Docker Compose file.
+
+##### `service_names()`
+Get list of service names defined in the compose file.
+
+**Returns:** `list[str]` - List of service names
+
+```python
+services = compose.service_names()  # ['web', 'db']
+```
+
+##### `network_names()`
+Get list of network names defined in the compose file.
+
+**Returns:** `list[str]` - List of network names
+
+##### `volume_names()`
+Get list of volume names defined in the compose file.
+
+**Returns:** `list[str]` - List of volume names
+
+##### `get_service(name)`
+Get configuration for a specific service.
+
+**Parameters:**
+- `name` (str): Service name
+
+**Returns:** `dict` or `None` - Service configuration or None if not found
+
+```python
+web_config = compose.get_service("web")
+print(web_config["image"])  # 'nginx'
+```
+
+##### `to_dict()`
+Convert the compose file to a dictionary.
+
+**Returns:** `dict` - The full compose configuration
+
+#### ComposeProject
+
+Manages a Docker Compose project (networks, volumes, containers).
+
+##### `ComposeProject(docker, compose_file, project_name)`
+Create a new compose project.
+
+**Parameters:**
+- `docker` (Docker): Docker client instance
+- `compose_file` (ComposeFile): Parsed compose file
+- `project_name` (str): Name prefix for all created resources
+
+```python
+from docker_pyo3 import Docker
+from docker_pyo3.compose import parse_compose_file, ComposeProject
+
+docker = Docker()
+compose = parse_compose_file("docker-compose.yml")
+project = ComposeProject(docker, compose, "myapp")
+```
+
+##### `up(detach=None)`
+Bring up the compose project (create networks, volumes, containers).
+
+**Parameters:**
+- `detach` (bool, optional): Run containers in background (default: True)
+
+**Returns:** `dict` - Results including created network IDs, volume names, and container IDs
+
+```python
+result = project.up()
+print(f"Created containers: {result['containers']}")
+```
+
+##### `down(remove_volumes=None, remove_networks=None, timeout=None)`
+Bring down the compose project.
+
+**Parameters:**
+- `remove_volumes` (bool, optional): Also remove named volumes (default: False)
+- `remove_networks` (bool, optional): Also remove networks (default: True)
+- `timeout` (int, optional): Timeout in seconds for stopping containers (default: 10)
+
+**Returns:** `dict` - Results including removed resources
+
+```python
+project.down(remove_volumes=True)
+```
+
+##### `ps()`
+List container IDs for this project.
+
+**Returns:** `list[str]` - List of container IDs
+
+##### `ps_detailed()`
+Get detailed information about project containers.
+
+**Returns:** `list[dict]` - List of container info with id, name, service, state, status, image
+
+```python
+containers = project.ps_detailed()
+for c in containers:
+    print(f"{c['service']}: {c['state']}")
+```
+
+##### `start()`
+Start all stopped containers in the project.
+
+**Returns:** `list[str]` - List of started container IDs
+
+##### `stop(timeout=None)`
+Stop all running containers.
+
+**Parameters:**
+- `timeout` (int, optional): Timeout in seconds (default: 10)
+
+**Returns:** `list[str]` - List of stopped container IDs
+
+##### `restart(timeout=None)`
+Restart all containers.
+
+**Parameters:**
+- `timeout` (int, optional): Timeout in seconds (default: 10)
+
+**Returns:** `list[str]` - List of restarted container IDs
+
+##### `pause()`
+Pause all running containers.
+
+**Returns:** `list[str]` - List of paused container IDs
+
+##### `unpause()`
+Unpause all paused containers.
+
+**Returns:** `list[str]` - List of unpaused container IDs
+
+##### `pull()`
+Pull images for all services.
+
+**Returns:** `list[str]` - List of pulled images
+
+##### `build(no_cache=None, pull=None)`
+Build images for services with build configurations.
+
+**Parameters:**
+- `no_cache` (bool, optional): Do not use cache (default: False)
+- `pull` (bool, optional): Pull newer base images (default: False)
+
+**Returns:** `list[str]` - List of built services
+
+##### `logs(service=None, tail=None, timestamps=None)`
+Get logs from containers.
+
+**Parameters:**
+- `service` (str, optional): Only get logs from this service
+- `tail` (int, optional): Number of lines from end
+- `timestamps` (bool, optional): Include timestamps (default: False)
+
+**Returns:** `dict[str, str]` - Mapping of container ID to logs
+
+```python
+logs = project.logs(service="web", tail=100)
+```
+
+##### `top(ps_args=None)`
+Get running processes from containers.
+
+**Parameters:**
+- `ps_args` (str, optional): Arguments to pass to ps command
+
+**Returns:** `dict[str, dict]` - Mapping of container ID to process info
+
+##### `config()`
+Get the compose configuration as a dictionary.
+
+**Returns:** `dict` - The compose configuration
+
+##### `exec(service, command, user=None, workdir=None, env=None, privileged=None, tty=None)`
+Execute a command in a running service container.
+
+**Parameters:**
+- `service` (str): Service name
+- `command` (list[str]): Command to execute
+- `user` (str, optional): User to run as
+- `workdir` (str, optional): Working directory
+- `env` (list[str], optional): Environment variables (e.g., `["VAR=value"]`)
+- `privileged` (bool, optional): Extended privileges (default: False)
+- `tty` (bool, optional): Allocate pseudo-TTY (default: False)
+
+**Returns:** `str` - Command output
+
+```python
+output = project.exec("web", ["ls", "-la", "/app"])
+
+# With environment variables
+output = project.exec(
+    "web",
+    ["sh", "-c", "echo $MY_VAR"],
+    env=["MY_VAR=hello"]
+)
+```
+
+##### `run(service, command=None, user=None, workdir=None, env=None, rm=None, detach=None)`
+Run a one-off command in a new container.
+
+**Parameters:**
+- `service` (str): Service name
+- `command` (list[str], optional): Command to execute (uses service default if not provided)
+- `user` (str, optional): User to run as
+- `workdir` (str, optional): Working directory
+- `env` (list[str], optional): Additional environment variables
+- `rm` (bool, optional): Remove container after exit (default: True)
+- `detach` (bool, optional): Run in background (default: False)
+
+**Returns:** `dict` - Result with container_id, output (if not detached), exit_code
+
+```python
+# Run a one-off command
+result = project.run("web", ["python", "manage.py", "migrate"])
+print(result["output"])
+
+# Run detached
+result = project.run("worker", ["celery", "worker"], detach=True)
+print(f"Container ID: {result['container_id']}")
+```
+
+---
+
+### Plugins
+
+Interface for managing Docker plugins.
+
+#### `Plugins.get(name)`
+Get a specific plugin by name.
+
+**Parameters:**
+- `name` (str): Plugin name (e.g., "vieux/sshfs:latest")
+
+**Returns:** `Plugin` - Plugin instance
+
+```python
+plugins = docker.plugins()
+plugin = plugins.get("vieux/sshfs:latest")
+```
+
+#### `Plugins.list()`
+List all installed plugins.
+
+**Returns:** `list[dict]` - List of plugin information
+
+```python
+plugins_list = docker.plugins().list()
+for p in plugins_list:
+    print(f"{p['Name']}: {'enabled' if p['Enabled'] else 'disabled'}")
+```
+
+#### `Plugins.list_by_capability(capability)`
+List plugins filtered by capability.
+
+**Parameters:**
+- `capability` (str): Capability filter (e.g., "volumedriver", "networkdriver")
+
+**Returns:** `list[dict]` - List of matching plugins
+
+```python
+volume_plugins = docker.plugins().list_by_capability("volumedriver")
+```
+
+#### `Plugin.name()`
+Get the plugin name.
+
+**Returns:** `str` - Plugin name
+
+#### `Plugin.inspect()`
+Inspect the plugin for detailed information.
+
+**Returns:** `dict` - Plugin details including settings, config, enabled state
+
+```python
+info = plugin.inspect()
+print(f"Enabled: {info['Enabled']}")
+```
+
+#### `Plugin.enable(timeout=None)`
+Enable the plugin.
+
+**Parameters:**
+- `timeout` (int, optional): Timeout in seconds
+
+**Returns:** `None`
+
+```python
+plugin.enable()
+```
+
+#### `Plugin.disable()`
+Disable the plugin.
+
+**Returns:** `None`
+
+```python
+plugin.disable()
+```
+
+#### `Plugin.remove()`
+Remove the plugin (must be disabled first).
+
+**Returns:** `dict` - Information about removed plugin
+
+```python
+plugin.disable()
+plugin.remove()
+```
+
+#### `Plugin.force_remove()`
+Forcefully remove the plugin (even if enabled).
+
+**Returns:** `dict` - Information about removed plugin
+
+#### `Plugin.push()`
+Push the plugin to a registry.
+
+**Returns:** `None`
+
+#### `Plugin.create(path)`
+Create a plugin from a tar archive.
+
+**Parameters:**
+- `path` (str): Path to tar archive with rootfs and config.json
+
+**Returns:** `None`
+
+---
+
+### Swarm Mode Operations
+
+These operations require Docker to be running in Swarm mode.
+
+#### Nodes
+
+Interface for managing Swarm nodes.
+
+##### `Nodes.get(id)`
+Get a specific node by ID or name.
+
+**Parameters:**
+- `id` (str): Node ID or name
+
+**Returns:** `Node` - Node instance
+
+##### `Nodes.list()`
+List all nodes in the swarm.
+
+**Returns:** `list[dict]` - List of node information
+
+```python
+nodes = docker.nodes().list()
+for node in nodes:
+    print(f"{node['ID']}: {node['Status']['State']}")
+```
+
+##### `Node.id()`
+Get the node ID.
+
+**Returns:** `str` - Node ID
+
+##### `Node.inspect()`
+Inspect the node for detailed information.
+
+**Returns:** `dict` - Node details including status, spec, description
+
+```python
+info = node.inspect()
+print(f"Role: {info['Spec']['Role']}")
+print(f"Availability: {info['Spec']['Availability']}")
+```
+
+##### `Node.delete()`
+Delete the node from the swarm.
+
+**Returns:** `None`
+
+##### `Node.force_delete()`
+Force delete the node from the swarm.
+
+**Returns:** `None`
+
+##### `Node.update(version, name=None, role=None, availability=None, labels=None)`
+Update node configuration.
+
+**Parameters:**
+- `version` (str): Node version (from inspect)
+- `name` (str, optional): Node name
+- `role` (str, optional): Role ("worker" or "manager")
+- `availability` (str, optional): Availability ("active", "pause", or "drain")
+- `labels` (dict, optional): Node labels
+
+```python
+info = node.inspect()
+version = str(info['Version']['Index'])
+node.update(version, availability="drain", labels={"env": "production"})
+```
+
+#### Services
+
+Interface for managing Swarm services.
+
+##### `Services.get(id)`
+Get a specific service by ID or name.
+
+**Parameters:**
+- `id` (str): Service ID or name
+
+**Returns:** `Service` - Service instance
+
+##### `Services.list()`
+List all services in the swarm.
+
+**Returns:** `list[dict]` - List of service information
+
+```python
+services = docker.services().list()
+for svc in services:
+    print(f"{svc['Spec']['Name']}: {svc['Spec']['Mode']}")
+```
+
+##### `Service.id()`
+Get the service ID.
+
+**Returns:** `str` - Service ID
+
+##### `Service.inspect()`
+Inspect the service for detailed information.
+
+**Returns:** `dict` - Service details including spec, endpoint, update status
+
+##### `Service.delete()`
+Delete the service from the swarm.
+
+**Returns:** `None`
+
+##### `Service.logs(stdout=None, stderr=None, timestamps=None, n_lines=None, all=None, since=None)`
+Get service logs.
+
+**Parameters:**
+- `stdout` (bool, optional): Include stdout
+- `stderr` (bool, optional): Include stderr
+- `timestamps` (bool, optional): Include timestamps
+- `n_lines` (int, optional): Number of lines from end
+- `all` (bool, optional): Return all logs
+- `since` (datetime, optional): Only logs since this time
+
+**Returns:** `str` - Service logs
+
+#### Secrets
+
+Interface for managing Swarm secrets.
+
+##### `Secrets.get(id)`
+Get a specific secret by ID or name.
+
+**Parameters:**
+- `id` (str): Secret ID or name
+
+**Returns:** `Secret` - Secret instance
+
+##### `Secrets.list()`
+List all secrets in the swarm.
+
+**Returns:** `list[dict]` - List of secret information
+
+##### `Secrets.create(name, data, labels=None)`
+Create a new secret.
+
+**Parameters:**
+- `name` (str): Secret name
+- `data` (str): Secret data (base64 encoded automatically)
+- `labels` (dict, optional): Labels
+
+**Returns:** `Secret` - Created secret instance
+
+```python
+secret = docker.secrets().create(
+    name="db_password",
+    data="super_secret_123",
+    labels={"app": "myapp"}
+)
+```
+
+##### `Secret.id()`
+Get the secret ID.
+
+**Returns:** `str` - Secret ID
+
+##### `Secret.inspect()`
+Inspect the secret (data not returned for security).
+
+**Returns:** `dict` - Secret metadata
+
+##### `Secret.delete()`
+Delete the secret.
+
+**Returns:** `None`
+
+#### Configs
+
+Interface for managing Swarm configs (non-sensitive configuration data).
+
+##### `Configs.get(id)`
+Get a specific config by ID or name.
+
+**Parameters:**
+- `id` (str): Config ID or name
+
+**Returns:** `Config` - Config instance
+
+##### `Configs.list()`
+List all configs in the swarm.
+
+**Returns:** `list[dict]` - List of config information
+
+##### `Configs.create(name, data, labels=None)`
+Create a new config.
+
+**Parameters:**
+- `name` (str): Config name
+- `data` (str): Config data (base64 encoded automatically)
+- `labels` (dict, optional): Labels
+
+**Returns:** `Config` - Created config instance
+
+```python
+config = docker.configs().create(
+    name="nginx_config",
+    data="server { listen 80; }",
+    labels={"app": "web"}
+)
+```
+
+##### `Config.id()`
+Get the config ID.
+
+**Returns:** `str` - Config ID
+
+##### `Config.inspect()`
+Inspect the config.
+
+**Returns:** `dict` - Config details
+
+##### `Config.delete()`
+Delete the config.
+
+**Returns:** `None`
+
+#### Tasks
+
+Interface for managing Swarm tasks (container instances of services).
+
+##### `Tasks.get(id)`
+Get a specific task by ID.
+
+**Parameters:**
+- `id` (str): Task ID
+
+**Returns:** `Task` - Task instance
+
+##### `Tasks.list()`
+List all tasks in the swarm.
+
+**Returns:** `list[dict]` - List of task information
+
+```python
+tasks = docker.tasks().list()
+for task in tasks:
+    print(f"{task['ID']}: {task['Status']['State']}")
+```
+
+##### `Task.id()`
+Get the task ID.
+
+**Returns:** `str` - Task ID
+
+##### `Task.inspect()`
+Inspect the task for detailed information.
+
+**Returns:** `dict` - Task details including status, spec, assigned node
+
+##### `Task.logs(stdout=None, stderr=None, timestamps=None, n_lines=None, all=None, since=None)`
+Get task logs.
+
+**Parameters:**
+- Same as Service.logs()
+
+**Returns:** `str` - Task logs
 
 ---
 

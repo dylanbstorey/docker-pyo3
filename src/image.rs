@@ -1,14 +1,14 @@
 use std::collections::HashMap;
-use std::fs::OpenOptions;
+use std::fs::{File, OpenOptions};
 
 use crate::Pyo3Docker;
 use docker_api::models::{
-    ImageDeleteResponseItem, ImageHistory200Response, ImageInspect, ImagePrune200Response,
-    ImageSummary,
+    BuildPrune200Response, ImageDeleteResponseItem, ImageHistory200Response, ImageInspect,
+    ImagePrune200Response, ImageSearch200Response,
 };
 use docker_api::opts::{
-    ImageBuildOpts, ImageFilter, ImageListOpts, ImageName, ImagePushOpts, PullOpts, RegistryAuth,
-    TagOpts,
+    ClearCacheOpts, ImageBuildOpts, ImageFilter, ImageListOpts, ImageName, ImagePushOpts, PullOpts,
+    RegistryAuth, TagOpts,
 };
 
 use docker_api::{Image, Images};
@@ -17,7 +17,26 @@ use pyo3::exceptions;
 use pyo3::prelude::*;
 use pyo3::types::PyDict;
 use pythonize::pythonize;
+use serde::{Deserialize, Serialize};
 use std::io::Write;
+
+/// Compatible ImageSummary that handles Docker API v1.44+ which removed VirtualSize.
+/// This struct mirrors docker_api::models::ImageSummary but makes virtual_size optional.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "PascalCase")]
+pub struct ImageSummaryCompat {
+    pub id: String,
+    pub parent_id: String,
+    pub repo_tags: Option<Vec<String>>,
+    pub repo_digests: Option<Vec<String>>,
+    pub created: i64,
+    pub size: i64,
+    pub shared_size: i64,
+    #[serde(default)]
+    pub virtual_size: Option<i64>,
+    pub labels: Option<HashMap<String, String>>,
+    pub containers: i64,
+}
 
 #[pymodule]
 pub fn image(_py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
@@ -131,11 +150,13 @@ impl Pyo3Images {
             }
         }
 
-        let rv = __images_list(&self.0, &opts.build());
+        // Use docker CLI to list images, working around docker-api's VirtualSize issue
+        // Docker API v1.44+ removed VirtualSize field, breaking upstream ImageSummary struct
+        let rv = __images_list_via_cli(all.unwrap_or(false));
 
         match rv {
             Ok(rv) => Ok(pythonize_this!(rv)),
-            Err(rv) => Err(exceptions::PySystemError::new_err(format!("{rv:?}"))),
+            Err(rv) => Err(exceptions::PySystemError::new_err(rv)),
         }
     }
 
@@ -249,11 +270,23 @@ impl Pyo3Images {
         }
     }
 
-    // fn search(&self) -> PyResult<()> {
-    //     Err(exceptions::PyNotImplementedError::new_err(
-    //         "This method is not available yet.",
-    //     ))
-    // }
+    /// Search for images on Docker Hub.
+    ///
+    /// Args:
+    ///     term: Search term (e.g., "nginx", "python")
+    ///
+    /// Returns:
+    ///     dict: Search results including image names, descriptions, and star counts
+    ///
+    /// Raises:
+    ///     SystemError: If search fails
+    fn search(&self, term: &str) -> PyResult<Py<PyAny>> {
+        let rv = __images_search(&self.0, term);
+        match rv {
+            Ok(rv) => Ok(pythonize_this!(rv)),
+            Err(rv) => Err(py_sys_exception!(rv)),
+        }
+    }
 
     /// Pull an image from a registry.
     ///
@@ -336,37 +369,156 @@ impl Pyo3Images {
         }
     }
 
-    // fn export(&self) -> PyResult<()> {
-    //     Err(exceptions::PyNotImplementedError::new_err(
-    //         "This method is not available yet.",
-    //     ))
-    // }
-
-    // fn import(&self) -> PyResult<()> {
-    //     Err(exceptions::PyNotImplementedError::new_err(
-    //         "This method is not available yet.",
-    //     ))
-    // }
-
-    fn push(&self) -> PyResult<()> {
-        Err(exceptions::PyNotImplementedError::new_err(
-            "This method is not available yet.",
-        ))
+    /// Import images from a tarball file.
+    ///
+    /// This loads images that were previously exported using `docker save` or `image.export()`.
+    ///
+    /// Args:
+    ///     path: Path to the tarball file to import
+    ///
+    /// Returns:
+    ///     list[str]: Import result messages
+    ///
+    /// Raises:
+    ///     SystemError: If import fails
+    fn import_image(&self, path: &str) -> PyResult<Py<PyAny>> {
+        let rv = __images_import(&self.0, path);
+        match rv {
+            Ok(rv) => Ok(pythonize_this!(rv)),
+            Err(rv) => Err(py_sys_exception!(rv)),
+        }
     }
 
-    fn clear_cache(&self) -> PyResult<()> {
-        Err(exceptions::PyNotImplementedError::new_err(
-            "This method is not available yet.",
-        ))
+    /// Clear the build cache.
+    ///
+    /// Args:
+    ///     all: Remove all unused build cache, not just dangling ones
+    ///     keep_storage: Amount of disk space to keep for cache (in bytes)
+    ///
+    /// Returns:
+    ///     dict: Cache prune results including space reclaimed
+    ///
+    /// Raises:
+    ///     SystemError: If cache clear fails
+    #[pyo3(signature = (all=None, keep_storage=None))]
+    fn clear_cache(&self, all: Option<bool>, keep_storage: Option<i64>) -> PyResult<Py<PyAny>> {
+        let mut opts = ClearCacheOpts::builder();
+        bo_setter!(all, opts);
+        bo_setter!(keep_storage, opts);
+
+        let rv = __images_clear_cache(&self.0, &opts.build());
+        match rv {
+            Ok(rv) => Ok(pythonize_this!(rv)),
+            Err(rv) => Err(py_sys_exception!(rv)),
+        }
     }
 }
 
-#[tokio::main]
-async fn __images_list(
-    images: &Images,
-    opts: &ImageListOpts,
-) -> Result<Vec<ImageSummary>, docker_api::Error> {
-    images.list(opts).await
+/// List images using docker CLI to handle Docker API v1.44+ compatibility.
+/// Docker API v1.44+ removed the VirtualSize field, breaking the upstream ImageSummary struct.
+/// This function calls `docker images` and parses JSON output with optional virtual_size.
+fn __images_list_via_cli(all: bool) -> Result<Vec<ImageSummaryCompat>, String> {
+    use std::process::Command;
+
+    let mut cmd = Command::new("docker");
+    cmd.args(["images", "--format", "json", "--no-trunc"]);
+    if all {
+        cmd.arg("--all");
+    }
+
+    let output = cmd.output().map_err(|e| format!("Failed to execute docker: {}", e))?;
+
+    if !output.status.success() {
+        return Err(format!(
+            "docker images failed: {}",
+            String::from_utf8_lossy(&output.stderr)
+        ));
+    }
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+
+    // Docker outputs one JSON object per line (NDJSON format)
+    let mut images = Vec::new();
+    for line in stdout.lines() {
+        if line.trim().is_empty() {
+            continue;
+        }
+        // Parse the docker CLI JSON format and convert to our struct
+        let cli_image: DockerCliImage =
+            serde_json::from_str(line).map_err(|e| format!("Failed to parse JSON: {}", e))?;
+        images.push(cli_image.into());
+    }
+
+    Ok(images)
+}
+
+/// Docker CLI image format (from `docker images --format json`)
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "PascalCase")]
+struct DockerCliImage {
+    #[serde(rename = "ID")]
+    pub id: String,
+    pub repository: String,
+    pub tag: String,
+    pub digest: String,
+    pub created_since: String,
+    pub created_at: String,
+    pub size: String,
+    #[serde(default)]
+    pub virtual_size: Option<String>,
+    pub shared_size: String,
+    pub unique_size: String,
+    pub containers: String,
+}
+
+impl From<DockerCliImage> for ImageSummaryCompat {
+    fn from(cli: DockerCliImage) -> Self {
+        // Parse size strings to bytes (e.g., "1.23GB" -> bytes)
+        fn parse_size(s: &str) -> i64 {
+            let s = s.trim();
+            if s == "N/A" || s.is_empty() {
+                return 0;
+            }
+            let (num, unit) = s.split_at(s.len().saturating_sub(2));
+            let num: f64 = num.parse().unwrap_or(0.0);
+            match unit.to_uppercase().as_str() {
+                "KB" => (num * 1024.0) as i64,
+                "MB" => (num * 1024.0 * 1024.0) as i64,
+                "GB" => (num * 1024.0 * 1024.0 * 1024.0) as i64,
+                "TB" => (num * 1024.0 * 1024.0 * 1024.0 * 1024.0) as i64,
+                _ => {
+                    // Try parsing as plain bytes
+                    let clean: String = s.chars().filter(|c| c.is_numeric()).collect();
+                    clean.parse().unwrap_or(0)
+                }
+            }
+        }
+
+        let repo_tag = if cli.repository != "<none>" && cli.tag != "<none>" {
+            Some(vec![format!("{}:{}", cli.repository, cli.tag)])
+        } else {
+            None
+        };
+
+        let repo_digest = if cli.digest != "<none>" {
+            Some(vec![format!("{}@{}", cli.repository, cli.digest)])
+        } else {
+            None
+        };
+
+        ImageSummaryCompat {
+            id: cli.id,
+            parent_id: String::new(), // CLI doesn't provide parent ID
+            repo_tags: repo_tag,
+            repo_digests: repo_digest,
+            created: 0, // CLI provides human-readable, not timestamp
+            size: parse_size(&cli.size),
+            shared_size: parse_size(&cli.shared_size),
+            virtual_size: cli.virtual_size.map(|s| parse_size(&s)),
+            labels: None, // CLI doesn't provide labels in default format
+            containers: cli.containers.parse().unwrap_or(0),
+        }
+    }
 }
 
 #[tokio::main]
@@ -415,6 +567,42 @@ async fn __images_pull(
         Some(err_message) => Err(err_message),
         _ => Ok(ok_stream_vec),
     }
+}
+
+#[tokio::main]
+async fn __images_search(
+    images: &Images,
+    term: &str,
+) -> Result<ImageSearch200Response, docker_api::Error> {
+    images.search(term).await
+}
+
+#[tokio::main]
+async fn __images_import(images: &Images, path: &str) -> Result<Vec<String>, docker_api::Error> {
+    let file = File::open(path).map_err(|e| docker_api::Error::Any(Box::new(e)))?;
+
+    let mut stream = images.import(file);
+    let mut ok_stream_vec = Vec::new();
+    let mut err_message = None;
+    while let Some(import_result) = stream.next().await {
+        match import_result {
+            Ok(output) => ok_stream_vec.push(format!("{output:?}")),
+            Err(e) => err_message = Some(e),
+        }
+    }
+
+    match err_message {
+        Some(err_message) => Err(err_message),
+        _ => Ok(ok_stream_vec),
+    }
+}
+
+#[tokio::main]
+async fn __images_clear_cache(
+    images: &Images,
+    opts: &ClearCacheOpts,
+) -> Result<BuildPrune200Response, docker_api::Error> {
+    images.clear_cache(opts).await
 }
 
 #[pymethods]

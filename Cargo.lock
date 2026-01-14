@@ -98,9 +98,9 @@ dependencies = [
 
 [[package]]
 name = "containers-api"
-version = "0.7.0"
+version = "0.9.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "56082e32f18a6d60f06c736b49e234deffb93b13cb87091a39e0dec053d03819"
+checksum = "74a6c297451ce82117ff9090e5174bf18f86e6bcbfbfc3820246abbc4f44fa16"
 dependencies = [
  "chrono",
  "flate2",
@@ -193,9 +193,9 @@ dependencies = [
 
 [[package]]
 name = "docker-api"
-version = "0.12.2"
+version = "0.14.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "522a3ae33cf4fc165de192eb9c563b755bc43cda9bd6f442b2d511b84514b917"
+checksum = "4576e993f4ef4805931a835b7afe71dec6cbd096e9b08bbd8e8f03e1940b2745"
 dependencies = [
  "asynchronous-codec",
  "base64",
@@ -218,9 +218,9 @@ dependencies = [
 
 [[package]]
 name = "docker-api-stubs"
-version = "0.4.0"
+version = "0.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5872f5e057625a972acce1a51b461284eab32b7e594e18f8fc2f63724075da47"
+checksum = "6198e6d77eb486d04c9b3997aec536428a7cbba833e84cdfda49e144c8df1734"
 dependencies = [
  "chrono",
  "serde",
@@ -230,7 +230,7 @@ dependencies = [
 
 [[package]]
 name = "docker-pyo3"
-version = "0.2.1"
+version = "0.3.0"
 dependencies = [
  "chrono",
  "docker-api",
@@ -239,9 +239,17 @@ dependencies = [
  "pyo3-build-config",
  "pythonize",
  "serde",
+ "serde_json",
+ "serde_yaml",
  "tar",
  "tokio",
 ]
+
+[[package]]
+name = "equivalent"
+version = "1.0.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "877a4ace8713b0bcf2a4e7eec82529c029f1d0619886d18145fea96c3ffe5c0f"
 
 [[package]]
 name = "errno"
@@ -361,6 +369,12 @@ name = "hashbrown"
 version = "0.12.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8a9ee70c43aaf417c914396645a0fa852624801b24ebb7ae78fe8272889ac888"
+
+[[package]]
+name = "hashbrown"
+version = "0.16.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "841d1cc9bed7f9236f321df977030373f4a4163ae1a7dbfe1a51a2c1a51d9100"
 
 [[package]]
 name = "heck"
@@ -583,8 +597,18 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "bd070e393353796e801d209ad339e89596eb4c8d430d18ede6a1cced8fafbd99"
 dependencies = [
  "autocfg",
- "hashbrown",
+ "hashbrown 0.12.3",
  "serde",
+]
+
+[[package]]
+name = "indexmap"
+version = "2.13.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7714e70437a7dc3ac8eb7e6f8df75fd8eb422675fc7678aff7364301092b1017"
+dependencies = [
+ "equivalent",
+ "hashbrown 0.16.1",
 ]
 
 [[package]]
@@ -951,7 +975,7 @@ dependencies = [
  "base64",
  "chrono",
  "hex",
- "indexmap",
+ "indexmap 1.9.3",
  "serde",
  "serde_json",
  "serde_with_macros",
@@ -968,6 +992,19 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn",
+]
+
+[[package]]
+name = "serde_yaml"
+version = "0.9.34+deprecated"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6a8b1a1a2ebf674015cc02edccce75287f1a0130d394307b36743c2f5d504b47"
+dependencies = [
+ "indexmap 2.13.0",
+ "itoa",
+ "ryu",
+ "serde",
+ "unsafe-libyaml",
 ]
 
 [[package]]
@@ -1193,6 +1230,12 @@ name = "unindent"
 version = "0.2.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7264e107f553ccae879d21fbea1d6724ac785e8c3bfc762137959b5802826ef3"
+
+[[package]]
+name = "unsafe-libyaml"
+version = "0.2.11"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "673aac59facbab8a9007c7f6108d11f63b603f7cabff99fabf650fea5c32b861"
 
 [[package]]
 name = "url"
